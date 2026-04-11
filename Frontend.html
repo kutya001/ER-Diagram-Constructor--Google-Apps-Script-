@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>ER Diagram Constructor</title>
+<?!= HtmlService.createHtmlOutputFromFile('Styles').getContent() ?>
+</head>
+<body data-theme="dark">
+
+<div id="sync-progress" style="opacity:0"></div>
+<div id="loader"><div class="spin"></div><div class="sm">Инициализация…</div></div>
+<div id="toasts"></div>
+<div id="ctx">
+  <div class="ci" id="cx-edit">✏️ Редактировать</div>
+  <div class="ci" id="cx-col">＋ Добавить колонку</div>
+  <div class="ci" id="cx-copy">📋 Копировать таблицу</div>
+  <div class="csep"></div>
+  <div class="ci danger" id="cx-del">🗑 Удалить таблицу</div>
+</div>
+
+<!-- TOPBAR -->
+<div id="topbar">
+  <div class="logo">ER <span>Constr.</span></div>
+  <div class="sep"></div>
+  <select id="schema-sel"><option value="">— Схема —</option></select>
+  <button class="tb primary" onclick="openCreateSchema()">＋</button>
+  <button class="tb" id="btn-cps" onclick="copySchema()" disabled title="Копировать схему">📋</button>
+  <button class="tb danger" id="btn-ds" onclick="deleteSchema()" disabled title="Удалить схему">🗑</button>
+  <div class="sep"></div>
+  <button class="tb primary" id="btn-at" onclick="addTable()" disabled>＋ Таблица</button>
+  <div id="layout-w" style="position:relative;display:inline-block">
+    <button class="tb" id="btn-al" disabled title="Авторасположение" style="display:flex;align-items:center;gap:3px"
+      onclick="toggleLayoutMenu(event)">⊞ <span style="font-size:9px;opacity:.7">▾</span></button>
+    <div id="layout-menu" style="display:none;position:absolute;top:calc(100% + 4px);left:0;
+      background:var(--surface);border:1px solid var(--border);border-radius:8px;
+      box-shadow:var(--shadow);min-width:200px;z-index:3000;padding:4px 0;white-space:nowrap">
+      <div class="layout-opt" onclick="doLayout('smart')"     title="Иерархия по FK-зависимостям">🧠 Умное (по FK)</div>
+      <div class="layout-opt" onclick="doLayout('grid')"      title="Равномерная сетка">⊞ Сетка</div>
+      <div class="layout-opt" onclick="doLayout('radial')"    title="Центральная таблица окружена связями">🔵 Радиальное</div>
+      <div class="layout-opt" onclick="doLayout('category')"  title="Группировка по категориям">🗂 По категориям</div>
+      <div class="layout-opt" onclick="doLayout('compact')"   title="Плотная упаковка, минимум расстояний">📦 Компактное</div>
+    </div>
+  </div>
+  <div class="sep"></div>
+  <button class="tb" onclick="zoomOut()">－</button>
+  <span id="zoom-lbl">100%</span>
+  <button class="tb" onclick="zoomIn()">＋</button>
+  <button class="tb" onclick="resetView()" title="Сбросить вид">⌖</button>
+  <div class="sep"></div>
+  <button class="tb" id="btn-save" onclick="saveAll()">💾</button>
+  <button class="tb" onclick="openTplManager()">📐 Шаблоны</button>
+  <button class="tb" onclick="openDicts()">⚙️ Справочники</button>
+  <button class="tb" id="btn-rels" onclick="openRels()" disabled>🔗 Связи</button>
+  <button class="tb" id="btn-json" onclick="openJson()">{ } JSON</button>
+  <button class="tb" id="btn-builder" onclick="openBuilder()" disabled>🏗 Листы</button>
+  <button class="tb" id="btn-export-ss" onclick="openExportSS()" disabled title="Создать отдельную Google Таблицу из схемы">📤 В таблицу</button>
+  <button class="tb" onclick="openInstruction()">📖 Инструкция</button>
+  <div class="sep"></div>
+  <div class="themes" title="Тема">
+    <div class="tdot on" data-t="dark"  onclick="setTheme('dark')"  title="Тёмная"></div>
+    <div class="tdot"    data-t="light" onclick="setTheme('light')" title="Белая"></div>
+    <div class="tdot"    data-t="warm"  onclick="setTheme('warm')"  title="Тёплая"></div>
+  </div>
+  <button class="tb" onclick="togglePanel()">☰</button>
+  <div id="topbar-right">
+    <div id="sync-badge" title="Статус синхронизации">
+      <span id="sync-icon">✓</span>
+      <div id="sync-bar-wrap"><div id="sync-bar"></div></div>
+      <span id="sync-txt">Синхронизировано</span>
+    </div>
+    <button id="btn-sync" class="tb" onclick="syncNow()" title="Синхронизировать сейчас" style="padding:4px 8px">🔄</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <div id="sidebar">
+    <button id="sb-toggle" onclick="toggleSidebar()" title="Скрыть/показать панель">◀</button>
+    <div id="sb-resize"></div>
+    <div id="sb-left">
+      <div class="sb-hdr">
+        <span style="overflow:hidden;text-overflow:ellipsis">Схемы БД</span>
+        <div style="display:flex;gap:2px;flex-shrink:0">
+          <button class="icon-btn" onclick="loadAll()" title="Обновить">↻</button>
+          <button class="icon-btn" onclick="toggleSbLeft()" title="Скрыть список схем" id="sb-left-toggle">◀</button>
+        </div>
+      </div>
+      <div id="schema-tree"></div>
+    </div>
+    <div id="sb-divider"></div>
+    <div id="sb-right">
+      <div class="sb-hdr">
+        <button class="icon-btn" onclick="toggleSbRight()" title="Скрыть список таблиц" id="sb-right-toggle">▶</button>
+        <span id="sb-right-hdr" style="overflow:hidden;text-overflow:ellipsis;color:var(--t2);flex:1;padding-left:4px">— таблицы —</span>
+      </div>
+      <div id="sb-tbl-list"></div>
+    </div>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+    <div id="mini-map"><canvas id="mini-canvas"></canvas></div>
+  </div>
+  <div id="rpanel">
+    <div class="ptabs">
+      <div class="ptab on" data-tab="props">Свойства</div>
+      <div class="ptab" data-tab="cols">Колонки</div>
+      <div class="ptab" data-tab="rels">Связи</div>
+    </div>
+    <div class="pbody" id="pbody"><p class="sm" style="margin-top:20px;text-align:center">Выберите таблицу</p></div>
+  </div>
+</div>
+
+<!-- Relation popup -->
+<div id="rel-popup" style="display:none;position:fixed;z-index:3000;background:var(--surface);border:1px solid var(--border);border-radius:9px;box-shadow:var(--shadow);padding:12px 15px;min-width:220px;max-width:300px;font-size:12px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+    <span style="font-weight:700;font-size:13px;color:var(--fk)">🔗 Связь</span>
+    <button onclick="hideRelPopup()" style="background:none;color:var(--t2);font-size:16px;padding:0 4px;line-height:1">✕</button>
+  </div>
+  <div id="rel-popup-body"></div>
+  <div style="display:flex;gap:6px;margin-top:10px">
+    <button id="rel-popup-edit" style="flex:1;padding:5px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:11px;font-weight:600">✏️ Изменить цель</button>
+    <button id="rel-popup-del" style="padding:5px 8px;background:none;border:1px solid var(--red);color:var(--red);border-radius:5px;font-size:11px;font-weight:600">🗑 Удалить</button>
+  </div>
+</div>
+
+<!-- Schema context menu -->
+<div id="schema-ctx">
+  <div class="schema-ci" id="sctx-rename">✏️ Изменить название</div>
+  <div class="schema-ci" id="sctx-copy">📋 Копировать схему</div>
+  <div style="height:1px;background:var(--border);margin:3px 0"></div>
+  <div class="schema-ci danger" id="sctx-del">🗑 Удалить схему</div>
+</div>
+
+<!-- MODALS -->
+<!-- Export to new Spreadsheet -->
+<div class="overlay" id="m-export-ss">
+  <div class="modal" style="max-width:520px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <h3 style="margin:0;font-size:15px">📤 Создать отдельную Google Таблицу</h3>
+      <button onclick="closeM('m-export-ss')" style="background:none;color:var(--t2);font-size:18px;padding:0 4px">✕</button>
+    </div>
+    <div style="background:var(--accent)11;border:1px solid var(--accent)44;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text);line-height:1.6">
+      Создаётся <strong>новая Google Таблица</strong> в вашем Google Drive.<br>
+      Каждая таблица схемы станет отдельным листом. Добавятся листы <em>📋 README</em> и <em>🔗 Связи</em>.
+    </div>
+    <div class="fg"><label>Название книги</label><input id="ess-title" type="text" placeholder="Оставьте пустым — будет использовано имя схемы"/></div>
+    <div class="fg"><label>Папка в Google Drive <span style="font-size:10px;color:var(--t2);font-weight:400">(опционально)</span></label><input id="ess-folder" type="text" placeholder="Название папки, например: Проекты"/></div>
+    <div style="display:flex;gap:20px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:600">
+        <input type="checkbox" id="ess-examples" style="width:15px;height:15px;accent-color:var(--accent)"/>Добавить примеры данных
+      </label>
+      <div class="fg" style="margin:0;flex:0 0 auto">
+        <label>Строк примеров</label>
+        <input id="ess-rows" type="number" min="1" max="50" value="3" style="width:70px;padding:5px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:12px"/>
+      </div>
+    </div>
+    <div id="ess-preview" style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;max-height:160px;overflow-y:auto">
+      <div style="font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px;font-size:10px">Что будет создано:</div>
+      <div id="ess-preview-body"></div>
+    </div>
+    <div id="ess-progress" style="display:none;text-align:center;padding:16px 0">
+      <div class="spin" style="width:28px;height:28px;margin:0 auto 10px"></div>
+      <div style="font-size:12px;color:var(--t2)">Создание таблицы… это займёт несколько секунд</div>
+    </div>
+    <div id="ess-result" style="display:none;background:var(--green)11;border:1px solid var(--green)44;border-radius:8px;padding:12px 14px;margin-bottom:12px">
+      <div style="font-weight:700;color:var(--green);margin-bottom:6px">✅ Таблица создана!</div>
+      <div id="ess-result-body" style="font-size:12px"></div>
+    </div>
+    <div class="mfooter" id="ess-footer">
+      <button class="cancel" onclick="closeM('m-export-ss')">Отмена</button>
+      <button class="confirm" id="ess-btn-go" onclick="doExportSS()">📤 Создать таблицу</button>
+    </div>
+  </div>
+</div>
+
+<!-- Schema -->
+<div class="overlay" id="m-schema">
+  <div class="modal">
+    <h3 id="ms-title">Новая схема</h3>
+    <div class="fg"><label>Название</label><input id="ms-name" type="text" placeholder="Название схемы"/></div>
+    <div class="fg"><label>Описание</label><textarea id="ms-desc" rows="2"></textarea></div>
+    <div class="mfooter"><button class="cancel" onclick="closeM('m-schema')">Отмена</button><button class="confirm" onclick="submitSchema()">Сохранить</button></div>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="overlay" id="m-table">
+  <div class="modal">
+    <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between">
+      <h3 id="mt-title" style="margin:0;font-size:15px">Новая таблица</h3>
+      <button onclick="closeM('m-table')" style="background:none;color:var(--t2);font-size:18px;padding:0 4px">✕</button>
+    </div>
+    <div class="modal-top">
+      <div class="fg" style="flex:2;min-width:200px"><label>Название таблицы</label><input id="mt-name" type="text" placeholder="table_name" oninput="mtNameChanged()"/></div>
+      <div class="fg" style="flex:1;min-width:140px"><label>Категория</label><select id="mt-cat" onchange="onCatChange()"></select></div>
+      <div class="fg" style="flex:1;min-width:140px"><label>Назначение</label><select id="mt-asg"></select></div>
+      <div class="fg" style="flex:2;min-width:180px"><label>Описание</label><input id="mt-desc" type="text" placeholder="Описание таблицы"/></div>
+    </div>
+    <div class="modal-cols">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.5px">
+          Столбцы <span id="mt-col-count" style="font-weight:400;color:var(--t2);text-transform:none;letter-spacing:0">(0)</span>
+        </span>
+        <button onclick="mtAddRow()" style="padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:11px;font-weight:600">＋ Столбец</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="col-grid" id="mt-col-grid">
+          <thead><tr>
+            <th style="width:24px"></th>
+            <th>Название</th>
+            <th style="width:160px">Тип данных</th>
+            <th id="mt-fk-hdr" style="width:160px;display:none">FK → таблица / колонка</th>
+            <th>Описание</th>
+            <th style="width:32px"></th>
+          </tr></thead>
+          <tbody id="mt-col-tbody"></tbody>
+        </table>
+      </div>
+      <div id="mt-pk-warn" style="display:none;margin-top:8px;padding:6px 10px;background:#e74c3c11;border:1px solid #e74c3c44;border-radius:5px;font-size:11px;color:var(--red)">
+        ⚠ Допускается только один первичный ключ (PK) на таблицу
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="cancel" onclick="closeM('m-table')">Отмена</button>
+      <button class="confirm" onclick="submitTable()">💾 Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Templates Manager -->
+<div class="overlay" id="m-tpls">
+  <div class="modal" style="min-width:580px;max-width:820px;max-height:88vh;display:flex;flex-direction:column;padding:18px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <h3 style="margin:0">📐 Управление шаблонами</h3>
+      <button onclick="closeM('m-tpls')" style="background:none;color:var(--t2);font-size:17px;padding:0 4px">✕</button>
+    </div>
+    <div style="display:flex;gap:10px;flex:1;overflow:hidden;min-height:0">
+      <div style="width:190px;flex-shrink:0;display:flex;flex-direction:column;gap:6px">
+        <button class="savebtn" onclick="newTpl()">＋ Новый шаблон</button>
+        <div id="tpl-list" style="flex:1;overflow-y:auto"></div>
+      </div>
+      <div id="tpl-editor" style="flex:1;overflow-y:auto"><p class="sm" style="margin-top:24px;text-align:center">Выберите шаблон</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- Column -->
+<div class="overlay" id="m-col">
+  <div class="modal">
+    <h3 id="mc-title">Колонка</h3>
+    <div class="fg"><label>Название</label><input id="mc-name" type="text" placeholder="column_name"/></div>
+    <div class="fg">
+      <label>Тип данных</label>
+      <select id="mc-type" onchange="onTypeChange()"></select>
+      <div id="mc-type-badge" style="margin-top:4px;font-size:10px;color:var(--t2)"></div>
+    </div>
+    <div class="fg"><label>Описание</label><textarea id="mc-desc" rows="2"></textarea></div>
+    <input type="hidden" id="mc-pk"/>
+    <input type="hidden" id="mc-fk"/>
+    <div id="fk-sec" style="display:none">
+      <div class="fg"><label>Таблица (PK)</label><select id="mc-fkt" onchange="loadFkCols()"></select></div>
+      <div class="fg"><label>Колонка (PK)</label><select id="mc-fkc"></select></div>
+    </div>
+    <div class="mfooter"><button class="cancel" onclick="closeM('m-col')">Отмена</button><button class="confirm" onclick="submitCol()">Сохранить</button></div>
+  </div>
+</div>
+
+<!-- Confirm -->
+<div class="overlay" id="m-confirm">
+  <div class="modal" style="max-width:360px">
+    <h3 id="conf-title">Подтверждение</h3>
+    <p id="conf-msg" class="sm" style="margin-top:6px"></p>
+    <div class="mfooter"><button class="cancel" onclick="closeM('m-confirm')">Отмена</button><button class="danger" id="conf-ok">Удалить</button></div>
+  </div>
+</div>
+
+<!-- Dicts -->
+<div class="overlay" id="m-dicts">
+  <div class="modal" style="min-width:540px;max-width:680px;max-height:86vh;display:flex;flex-direction:column;padding:18px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <h3 style="margin:0">⚙️ Справочники</h3>
+      <button onclick="closeM('m-dicts')" style="background:none;color:var(--t2);font-size:17px;padding:0 4px">✕</button>
+    </div>
+    <p class="sm" style="margin-bottom:9px">Редактирование системных справочников</p>
+    <div class="dtabs">
+      <div class="dtab on" data-dt="cats">Категории</div>
+      <div class="dtab" data-dt="asgs">Назначения</div>
+      <div class="dtab" data-dt="cts">Типы колонок</div>
+    </div>
+    <div id="dict-body" style="flex:1;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- JSON -->
+<div class="overlay" id="m-json">
+  <div class="modal" style="min-width:700px;max-width:1000px;max-height:92vh;display:flex;flex-direction:column;padding:0;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0">
+      <h3 id="json-title" style="margin:0;font-size:15px">{ } JSON / AI</h3>
+      <button onclick="closeM('m-json')" style="background:none;color:var(--t2);font-size:18px;padding:0 5px">✕</button>
+    </div>
+    <div style="display:flex;border-bottom:1px solid var(--border);flex-shrink:0" id="json-tabs">
+      <div class="json-tab on" data-jt="export" onclick="switchJsonTab('export')">📤 Экспорт</div>
+      <div class="json-tab" data-jt="import" onclick="switchJsonTab('import')">📥 Импорт JSON</div>
+      <div class="json-tab" data-jt="ai" onclick="switchJsonTab('ai')">🤖 ИИ Промт</div>
+      <div class="json-tab" data-jt="sys" onclick="switchJsonTab('sys')">🗄 Системные данные</div>
+    </div>
+    <div id="json-tab-body" style="flex:1;overflow-y:auto;padding:14px 18px;min-height:0;display:flex;flex-direction:column;gap:10px"></div>
+  </div>
+</div>
+
+<!-- Builder modal -->
+<div class="overlay" id="m-builder">
+  <div class="modal" style="min-width:720px;max-width:1040px;max-height:92vh;display:flex;flex-direction:column;padding:18px;position:relative">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <h3 style="margin:0">🏗 Управление листами Google Таблицы</h3>
+      <button onclick="closeM('m-builder')" style="background:none;color:var(--t2);font-size:18px;padding:0 5px">✕</button>
+    </div>
+    <div class="bld-tabs">
+      <div class="bld-tab on" data-bt="manage">📋 Управление</div>
+      <div class="bld-tab" data-bt="analyse">🔍 Анализ схемы</div>
+      <div class="bld-tab" data-bt="preview">👁 Просмотр данных</div>
+    </div>
+    <div id="bld-body" style="flex:1;overflow-y:auto;min-height:0"></div>
+    <div id="bld-confirm" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,.65);border-radius:11px;z-index:10;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px;min-width:300px;max-width:420px;box-shadow:var(--shadow)">
+        <h4 id="bld-conf-title" style="margin:0 0 8px;font-size:14px"></h4>
+        <p id="bld-conf-msg" class="sm" style="margin-bottom:16px"></p>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="bldConfCancel()" style="padding:6px 15px;border-radius:6px;background:var(--s2);color:var(--t2);border:1px solid var(--border);font-weight:600;font-size:12px">Отмена</button>
+          <button id="bld-conf-ok" style="padding:6px 15px;border-radius:6px;background:var(--red);color:#fff;font-weight:600;font-size:12px">Удалить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Instruction -->
+<div class="overlay" id="m-inst">
+  <div class="modal" style="min-width:600px;max-width:820px;max-height:90vh;display:flex;flex-direction:column;padding:0;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0">
+      <h3 style="margin:0">📖 Инструкция по использованию</h3>
+      <button onclick="closeM('m-inst')" style="background:none;color:var(--t2);font-size:18px;padding:0 5px">✕</button>
+    </div>
+    <div style="padding:12px 18px;flex-shrink:0;display:flex;gap:8px;border-bottom:1px solid var(--border);align-items:center">
+      <span class="sm" id="inst-saved-at"></span>
+      <div style="margin-left:auto;display:flex;gap:7px">
+        <button id="inst-edit-btn" onclick="toggleInstEdit()" style="padding:5px 12px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:12px">✏️ Редактировать</button>
+        <button id="inst-save-btn" onclick="saveInstruction()" style="display:none;padding:5px 12px;background:var(--accent);color:#fff;border-radius:5px;font-size:12px;font-weight:600">💾 Сохранить</button>
+      </div>
+    </div>
+    <div id="inst-body" style="flex:1;overflow-y:auto;padding:16px 18px"></div>
+  </div>
+</div>
+
+<!-- Relations viewer -->
+<div class="overlay" id="m-rels">
+  <div class="modal" style="min-width:640px;max-width:900px;max-height:90vh;display:flex;flex-direction:column;padding:18px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <h3 style="margin:0">🔗 Связи схемы</h3>
+      <button onclick="closeM('m-rels')" style="background:none;color:var(--t2);font-size:18px;padding:0 5px">✕</button>
+    </div>
+    <div id="rels-meta" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap"></div>
+    <div id="rel-add-form">
+      <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">＋ Добавить связь</div>
+      <div style="display:grid;grid-template-columns:1fr auto 1fr auto 1fr 1fr auto;gap:6px;align-items:center">
+        <select id="rel-src-tbl" onchange="relFillSrcCols()" style="padding:5px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:12px"><option value="">FK таблица</option></select>
+        <span style="color:var(--t2);font-size:11px">.</span>
+        <select id="rel-src-col" style="padding:5px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:12px"><option value="">FK колонка</option></select>
+        <span style="color:var(--fk);font-weight:700;font-size:15px">→</span>
+        <select id="rel-tgt-tbl" onchange="relFillTgtCols()" style="padding:5px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:12px"><option value="">PK таблица</option></select>
+        <span style="color:var(--t2);font-size:11px">.</span>
+        <select id="rel-tgt-col" style="padding:5px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:12px"><option value="">PK колонка</option></select>
+        <button onclick="addRelFromModal()" style="padding:5px 12px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:12px;white-space:nowrap">Создать</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <input id="rels-search" type="text" placeholder="Поиск по таблице или колонке…"
+        style="flex:1;padding:5px 9px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:12px"
+        oninput="renderRelsList()">
+    </div>
+    <div id="rels-body" style="flex:1;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SCRIPT INCLUDES ═══════════════════ -->
+<?!= HtmlService.createHtmlOutputFromFile('JsCore').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsInit').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsCanvas').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsLayout').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsSidebar').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsTable').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsColumnEditor').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsTemplates').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsDicts').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsJson').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsUtils').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsRelations').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsInstruction').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsExportSS').getContent() ?>
+<?!= HtmlService.createHtmlOutputFromFile('JsBuilder').getContent() ?>
+
+</body>
+</html>

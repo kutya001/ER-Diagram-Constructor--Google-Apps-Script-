@@ -1,0 +1,293 @@
+<script>
+// ═══════════════════════════════════════════════════════════
+// SIDEBAR COLLAPSE / RESIZE
+// ═══════════════════════════════════════════════════════════
+let sbCollapsed=false,sbLeftCollapsed=false,sbRightCollapsed=false;
+const SB_WIDTH_KEY='er_sb_w', SBL_WIDTH_KEY='er_sbl_w';
+
+function toggleSidebar(){
+  sbCollapsed=!sbCollapsed;
+  const sb=document.getElementById('sidebar');
+  const toggle=document.getElementById('sb-toggle');
+  if(sbCollapsed){
+    sb.dataset.savedW=sb.offsetWidth;
+    sb.style.width='0';
+    sb.style.borderRight='none';
+    toggle.textContent='▶';
+  } else {
+    const w=parseInt(sb.dataset.savedW)||460;
+    sb.style.width=w+'px';
+    sb.style.borderRight='';
+    toggle.textContent='◀';
+  }
+  // Даём DOM обновиться (sidebar не имеет CSS transition — достаточно rAF)
+  requestAnimationFrame(()=>{resize();R();MR();});
+}
+
+function toggleSbLeft(){
+  sbLeftCollapsed=!sbLeftCollapsed;
+  const el=document.getElementById('sb-left');
+  const btn=document.getElementById('sb-left-toggle');
+  const div=document.getElementById('sb-divider');
+  if(sbLeftCollapsed){
+    el.dataset.savedW=el.offsetWidth||200;
+    el.style.width='0';
+    el.style.minWidth='0';
+    el.style.borderRight='none';
+    div.style.display='none';
+    btn.textContent='▶'; // collapsed → click to expand (arrow points right = "open right side")
+    btn.title='Показать список схем';
+  } else {
+    const w=parseInt(el.dataset.savedW)||200;
+    el.style.width=w+'px';
+    el.style.minWidth='';
+    el.style.borderRight='';
+    if(!sbRightCollapsed)div.style.display='';
+    btn.textContent='◀'; // expanded → click to collapse (arrow points left = "close")
+    btn.title='Скрыть список схем';
+  }
+  setTimeout(()=>{resize();R();MR();},170);
+}
+
+function toggleSbRight(){
+  sbRightCollapsed=!sbRightCollapsed;
+  const el=document.getElementById('sb-right');
+  const div=document.getElementById('sb-divider');
+  const btn=document.getElementById('sb-right-toggle');
+  if(sbRightCollapsed){
+    el.dataset.savedFlex=el.style.flex||'1';
+    el.style.width='0';
+    el.style.flex='none';
+    el.style.minWidth='0';
+    div.style.display='none';
+    btn.textContent='◀'; // collapsed → click to expand (arrow points left toward left side = "show")
+    btn.title='Показать список таблиц';
+  } else {
+    el.style.width='';
+    el.style.flex='1';
+    el.style.minWidth='0';
+    if(!sbLeftCollapsed)div.style.display='';
+    btn.textContent='▶'; // expanded → click to collapse (arrow points right = "hide right")
+    btn.title='Скрыть список таблиц';
+  }
+  setTimeout(()=>{resize();R();MR();},170);
+}
+
+// Sidebar outer resize
+(function(){
+  const handle=document.getElementById('sb-resize');
+  const sidebar=document.getElementById('sidebar');
+  let active=false,startX=0,startW=0;
+  handle.addEventListener('mousedown',e=>{
+    active=true;startX=e.clientX;startW=sidebar.offsetWidth;
+    handle.classList.add('dragging');document.body.style.cursor='col-resize';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!active)return;
+    const w=Math.max(120,Math.min(900,startW+(e.clientX-startX)));
+    sidebar.style.width=w+'px';
+    localStorage.setItem(SB_WIDTH_KEY,w);
+    resize();R();MR(); // FIX: обновить канвас в реалтайм
+  });
+  document.addEventListener('mouseup',()=>{
+    if(active){active=false;handle.classList.remove('dragging');document.body.style.cursor='';resize();R();MR();}
+  });
+  // Restore saved width
+  const saved=parseInt(localStorage.getItem(SB_WIDTH_KEY));
+  if(saved&&saved>100)sidebar.style.width=saved+'px';
+})();
+
+// Sidebar divider (between sb-left and sb-right)
+(function(){
+  const div=document.getElementById('sb-divider');
+  const sbL=document.getElementById('sb-left');
+  let active=false,startX=0,startW=0;
+  div.addEventListener('mousedown',e=>{
+    active=true;startX=e.clientX;startW=sbL.offsetWidth;
+    div.classList.add('dragging');document.body.style.cursor='col-resize';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!active)return;
+    const w=Math.max(100,Math.min(400,startW+(e.clientX-startX)));
+    sbL.style.width=w+'px';
+    localStorage.setItem(SBL_WIDTH_KEY,w);
+    // sb-divider меняет только соотношение sb-left/sb-right внутри sidebar
+    // canvas-wrap не затрагивается, но R() обновляет отрисовку
+    R();
+  });
+  document.addEventListener('mouseup',()=>{
+    if(active){active=false;div.classList.remove('dragging');document.body.style.cursor='';}
+  });
+  // Restore saved width
+  const saved=parseInt(localStorage.getItem(SBL_WIDTH_KEY));
+  if(saved&&saved>80)sbL.style.width=saved+'px';
+})();
+
+// ═══════════════════════════════════════════════════════════
+// CTX MENU
+// ═══════════════════════════════════════════════════════════
+function ctxShow(x,y,t){
+  const m=document.getElementById('ctx');m.style.display='block';m.style.left=x+'px';m.style.top=y+'px';
+  document.getElementById('cx-edit').onclick=()=>{ctxHide();openEditTable(t);};
+  document.getElementById('cx-col').onclick= ()=>{ctxHide();openAddCol();};
+  document.getElementById('cx-copy').onclick=()=>{ctxHide();cpTable();};
+  document.getElementById('cx-del').onclick= ()=>{ctxHide();delTable();};
+}
+function ctxHide(){document.getElementById('ctx').style.display='none';}
+
+// ─── Relation line popup ──────────────────────────────────
+function showRelPopup(col, cx, cy){
+  const popup=document.getElementById('rel-popup');
+  const body=document.getElementById('rel-popup-body');
+  const srcT=col.srcTable||S.tables.find(t=>String(t.id)===String(col.table_id));
+  const tgtT=col.tgtTable||S.tables.find(t=>String(t.id)===String(col.fk_table_id));
+  const tgtC=S.columns.find(c=>String(c.id)===String(col.fk_column_id));
+  body.innerHTML=`
+    <div style="margin-bottom:5px"><span style="color:var(--t2)">FK колонка:</span> <strong>${esc(col.name)}</strong></div>
+    <div style="margin-bottom:3px"><span style="color:var(--t2)">Таблица:</span> <strong>${esc(srcT?.name||'?')}</strong></div>
+    <div style="color:var(--fk);margin:5px 0;font-size:18px;text-align:center">↓</div>
+    <div style="margin-bottom:3px"><span style="color:var(--t2)">Ссылается на:</span></div>
+    <div><strong>${esc(tgtT?.name||'?')}</strong>.<span style="color:var(--green)">${esc(tgtC?.name||'?')}</span></div>`;
+
+  document.getElementById('rel-popup-del').onclick=()=>{
+    hideRelPopup();
+    rmRel(col.id);
+  };
+  document.getElementById('rel-popup-edit').onclick=()=>{
+    hideRelPopup();
+    openRelEditModal(col);
+  };
+
+  // Position popup near click, avoid screen edges
+  popup.style.display='block';
+  const pw=popup.offsetWidth||240, ph=popup.offsetHeight||160;
+  let px=cx+12, py=cy-20;
+  if(px+pw>window.innerWidth-10) px=cx-pw-12;
+  if(py+ph>window.innerHeight-10) py=cy-ph+20;
+  popup.style.left=px+'px'; popup.style.top=py+'px';
+}
+function hideRelPopup(){
+  document.getElementById('rel-popup').style.display='none';
+  // Restore buttons for next open
+  const eb=document.getElementById('rel-popup-edit');
+  const db=document.getElementById('rel-popup-del');
+  if(eb)eb.style.display='';
+  if(db)db.style.display='';
+  selRel=null; R();
+}
+// Close popup on outside click
+document.addEventListener('mousedown',e=>{
+  const p=document.getElementById('rel-popup');
+  if(p&&p.style.display!=='none'&&!p.contains(e.target)){
+    // only hide if click is not on canvas (canvas has its own handler)
+    if(e.target!==cv) hideRelPopup();
+  }
+});
+
+// Edit relation target from popup — inline inside the popup
+function openRelEditModal(col){
+  const body=document.getElementById('rel-popup-body');
+  const srcT=S.tables.find(t=>String(t.id)===String(col.table_id));
+  const schemaTables=schTables();
+
+  // Build PK target options grouped by table
+  let tblOpts=schemaTables.filter(t=>String(t.id)!==String(col.table_id))
+    .map(t=>`<option value="${t.id}" ${String(t.id)===String(col.fk_table_id)?'selected':''}>${esc(t.name)}</option>`).join('');
+
+  body.innerHTML=`
+    <div style="margin-bottom:6px;font-size:11px;color:var(--t2)">FK: <strong style="color:var(--fk)">${esc(col.name)}</strong> из <strong>${esc(srcT?.name||'?')}</strong></div>
+    <div class="fg" style="margin-bottom:6px">
+      <label style="font-size:10px;color:var(--t2);text-transform:uppercase">Целевая таблица (PK)</label>
+      <select id="rpe-tbl" style="width:100%;padding:4px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:12px">
+        <option value="">— выберите —</option>${tblOpts}
+      </select>
+    </div>
+    <div class="fg" style="margin-bottom:6px">
+      <label style="font-size:10px;color:var(--t2);text-transform:uppercase">Целевая колонка (PK)</label>
+      <select id="rpe-col" style="width:100%;padding:4px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:12px">
+        <option value="">— выберите —</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button onclick="rpeCancel('${col.id}')" style="flex:1;padding:5px;background:var(--s2);border:1px solid var(--border);color:var(--t2);border-radius:4px;font-size:11px">Отмена</button>
+      <button onclick="rpeSave('${col.id}')" style="flex:1;padding:5px;background:var(--accent);color:#fff;border-radius:4px;font-size:11px;font-weight:600">💾 Сохранить</button>
+    </div>`;
+
+  // Hide edit/delete buttons
+  document.getElementById('rel-popup-edit').style.display='none';
+  document.getElementById('rel-popup-del').style.display='none';
+
+  // Load PK cols for currently selected table
+  rpeLoadCols(col.fk_column_id);
+  document.getElementById('rpe-tbl').addEventListener('change',()=>rpeLoadCols(null));
+}
+
+function rpeLoadCols(selColId){
+  const tblSel=document.getElementById('rpe-tbl');
+  const colSel=document.getElementById('rpe-col');
+  if(!tblSel||!colSel)return;
+  const tid=tblSel.value;
+  const pkCols=S.columns.filter(c=>String(c.table_id)===String(tid)&&isPK(c));
+  colSel.innerHTML='<option value="">— выберите —</option>'+
+    pkCols.map(c=>`<option value="${c.id}"${String(c.id)===String(selColId)?'selected':''}>${esc(c.name)}</option>`).join('');
+}
+
+async function rpeSave(colId){
+  const tblSel=document.getElementById('rpe-tbl');
+  const colSel=document.getElementById('rpe-col');
+  if(!tblSel||!colSel)return;
+  const fk_table_id=tblSel.value, fk_column_id=colSel.value;
+  if(!fk_table_id||!fk_column_id){toast('Выберите таблицу и колонку','err');return;}
+  const col=S.columns.find(c=>String(c.id)===String(colId));
+  if(!col)return;
+  col.fk_table_id=fk_table_id; col.fk_column_id=fk_column_id;
+  inv(col.table_id);
+  hideRelPopup();
+  await api('updateColumn',{id:colId,fk_table_id,fk_column_id,is_fk:true});
+  toast('Связь обновлена','ok'); R();
+}
+
+function rpeCancel(colId){
+  // Re-show original popup
+  const col=S.columns.find(c=>String(c.id)===String(colId));
+  if(col) showRelPopup({...col,srcTable:S.tables.find(t=>String(t.id)===String(col.table_id)),tgtTable:S.tables.find(t=>String(t.id)===String(col.fk_table_id))},
+    parseInt(document.getElementById('rel-popup').style.left)+20,
+    parseInt(document.getElementById('rel-popup').style.top)+20);
+}
+
+// ═══════════════════════════════════════════════════════════
+// SCHEMA MODALS
+// ═══════════════════════════════════════════════════════════
+let schMode='create';
+function openCreateSchema(){schMode='create';document.getElementById('ms-title').textContent='Новая схема';document.getElementById('ms-name').value='';document.getElementById('ms-desc').value='';showM('m-schema');}
+function openEditSchema(){if(!S.schema)return;schMode='edit';document.getElementById('ms-title').textContent='Редактировать';document.getElementById('ms-name').value=S.schema.name;document.getElementById('ms-desc').value=S.schema.description||'';showM('m-schema');}
+async function submitSchema(){
+  const name=document.getElementById('ms-name').value.trim();if(!name){toast('Введите название','err');return;}
+  const desc=document.getElementById('ms-desc').value.trim();closeM('m-schema');
+  try{
+    if(schMode==='create'){const s=await api('createSchema',{name,description:desc});S.schemas.push(s);S.schema=s;}
+    else{const u=await api('updateSchema',{id:S.schema.id,name,description:desc});const i=S.schemas.findIndex(s=>String(s.id)===String(S.schema.id));if(i>=0)S.schemas[i]={...S.schemas[i],...u};S.schema=S.schemas[i];}
+    renderSchemaSel();renderTree();selSchema(S.schema.id);toast('Схема сохранена','ok');
+  }catch(e){toast('Ошибка: '+e.message,'err');}
+}
+async function copySchema(){
+  if(!S.schema)return;
+  if(S.schema.copied_from){toast('Нельзя копировать уже скопированную схему','err');return;}
+  if(!confirm(`Скопировать "${S.schema.name}"?`))return;
+  try{const ns=await api('copySchema',{id:S.schema.id});await loadAll();inv();selSchema(ns.id);toast('Схема скопирована','ok');}
+  catch(e){toast('Ошибка: '+e.message,'err');}
+}
+async function deleteSchema(){
+  if(!S.schema)return;
+  conf(`Удалить схему "${S.schema.name}"?`,'Все таблицы и колонки будут удалены!',async()=>{
+    try{
+      await api('deleteSchema',{id:S.schema.id});
+      S.tables=S.tables.filter(t=>String(t.schema_id)!==String(S.schema.id));
+      S.schemas=S.schemas.filter(s=>String(s.id)!==String(S.schema.id));
+      inv();S.schema=null;selSchema('');toast('Схема удалена','ok');
+    }catch(e){toast('Ошибка: '+e.message,'err');}
+  });
+}
+</script>

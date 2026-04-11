@@ -1,0 +1,158 @@
+<script>
+// ═══════════════════════════════════════════════════════════
+// COLUMN MODALS  (for editing existing table columns)
+// ═══════════════════════════════════════════════════════════
+let colMode='create',editCid=null;
+
+// Type-change handler for column modal
+function onTypeChange(){
+  const sel=document.getElementById('mc-type');
+  if(!sel)return;
+  const ct=S.ctypes.find(t=>String(t.id)===String(sel.value));
+  const des=ct?ct.designation.toLowerCase():'';
+  const isPk=des==='pk',isFk=des==='fk';
+  const badge=document.getElementById('mc-type-badge');
+  if(badge)badge.textContent=isPk?'🔑 Первичный ключ':isFk?'🔗 Внешний ключ (выберите таблицу ниже)':ct?ct.description||'':'';
+  // Sync hidden fields
+  const pk=document.getElementById('mc-pk'),fk=document.getElementById('mc-fk');
+  if(pk)pk.value=isPk?'true':'false';
+  if(fk)fk.value=isFk?'true':'false';
+  document.getElementById('fk-sec').style.display=isFk?'block':'none';
+}
+function onPkFk(){onTypeChange();}// compat
+
+function openAddCol(){
+  if(!S.table){toast('Выберите таблицу','err');return;}
+  colMode='create';editCid=null;
+  document.getElementById('mc-title').textContent='Новая колонка';
+  document.getElementById('mc-name').value='';
+  document.getElementById('mc-desc').value='';
+  fillTypesSel();fillFkTable();
+  document.getElementById('mc-type-badge').textContent='';
+  document.getElementById('fk-sec').style.display='none';
+  showM('m-col');
+}
+function openEditCol(cid){
+  const col=S.columns.find(c=>String(c.id)===String(cid));if(!col)return;
+  colMode='edit';editCid=cid;
+  document.getElementById('mc-title').textContent='Редактировать';
+  document.getElementById('mc-name').value=col.name;
+  document.getElementById('mc-desc').value=col.description||'';
+  fillTypesSel(col.type_id);fillFkTable(col.fk_table_id,col.fk_column_id);
+  onTypeChange();showM('m-col');
+}
+function fillTypesSel(sel=''){
+  document.getElementById('mc-type').innerHTML='<option value="">— тип —</option>'+
+    S.ctypes.map(t=>`<option value="${t.id}"${String(t.id)===String(sel)?' selected':''}>${esc(t.designation)} — ${esc(t.name)}</option>`).join('');
+  if(sel)onTypeChange();
+}
+function fillFkTable(selT='',selC=''){
+  const ts=schTables().filter(t=>S.table&&String(t.id)!==String(S.table.id));
+  document.getElementById('mc-fkt').innerHTML='<option value="">— таблица —</option>'+ts.map(t=>`<option value="${t.id}"${String(t.id)===String(selT)?' selected':''}>${esc(t.name)}</option>`).join('');
+  if(selT)loadFkCols(selC);
+}
+function loadFkCols(selC=''){
+  const tid=document.getElementById('mc-fkt').value;
+  const pks=S.columns.filter(c=>String(c.table_id)===String(tid)&&isPK(c));
+  document.getElementById('mc-fkc').innerHTML='<option value="">— PK колонка —</option>'+pks.map(c=>`<option value="${c.id}"${String(c.id)===String(selC)?' selected':''}>${esc(c.name)}</option>`).join('');
+}
+
+async function submitCol(){
+  const name=document.getElementById('mc-name').value.trim();if(!name){toast('Введите название','err');return;}
+  const desc=document.getElementById('mc-desc').value.trim(),typeId=document.getElementById('mc-type').value;
+  const ct=S.ctypes.find(t=>String(t.id)===String(typeId));
+  const des=ct?ct.designation.toLowerCase():'';
+  const pk=des==='pk',fk=des==='fk';
+  const fkt=fk?document.getElementById('mc-fkt').value:'';
+  const fkc=fk?document.getElementById('mc-fkc').value:'';
+  // PK validation: only one PK per table
+  if(pk&&S.table){
+    const ep=S.columns.find(c=>String(c.table_id)===String(S.table.id)&&isPK(c)&&String(c.id)!==String(editCid));
+    if(ep){toast(`Таблица уже имеет PK: «${ep.name}». Один PK на таблицу.`,'err');return;}
+  }
+  if(fk){
+    if(!fkt){toast('Выберите таблицу FK','err');return;}
+    if(!fkc){toast('Выберите PK-колонку','err');return;}
+  }
+  closeM('m-col');
+  try{
+    if(colMode==='create'){
+      const col=await api('createColumn',{table_id:S.table.id,name,description:desc,type_id:typeId,is_pk:pk,is_fk:fk,fk_table_id:fkt,fk_column_id:fkc});
+      S.columns.push(col);inv(col.table_id);
+    }else{
+      const u=await api('updateColumn',{id:editCid,name,description:desc,type_id:typeId,is_pk:pk,is_fk:fk,fk_table_id:fkt,fk_column_id:fkc});
+      const i=S.columns.findIndex(c=>String(c.id)===String(editCid));
+      if(i>=0){S.columns[i]={...S.columns[i],...u};inv(S.columns[i].table_id);}
+    }
+    toast('Колонка сохранена','ok');R();renderPanel();
+  }catch(e){toast('Ошибка: '+e.message,'err');}
+}
+async function delCol(cid){
+  conf('Удалить колонку?','',async()=>{
+    try{
+      const col=S.columns.find(c=>String(c.id)===String(cid));
+      if(!String(cid).startsWith('tmpcol_'))await api('deleteColumn',{id:cid});
+      if(col)inv(col.table_id);
+      S.columns=S.columns.filter(c=>String(c.id)!==String(cid));
+      toast('Удалена','ok');R();renderPanel();
+    }catch(e){toast('Ошибка: '+e.message,'err');}
+  });
+}
+
+// Relation drag — enforced FK→PK only
+async function createRel(src,pk){
+  const col=S.columns.find(c=>String(c.id)===String(src.columnId));if(!col)return;
+  // Source must be FK type
+  if(!isFK(col)){
+    const ct=S.ctypes.find(t=>String(t.id)===String(col.type_id));
+    toast(`Связь можно начинать только от колонки с типом FK (у «${col.name}» тип: ${ct?.designation||'?'})`, 'err');
+    return;
+  }
+  // Target must be PK type
+  const tc=S.columns.find(c=>String(c.id)===String(pk.columnId));
+  if(!tc||!isPK(tc)){toast('Связь допустима только с PK другой таблицы','err');return;}
+  if(String(src.tableId)===String(pk.tableId)){toast('Нельзя связать таблицу саму с собой','err');return;}
+  // Update FK column
+  col.is_fk=true;col.fk_table_id=pk.tableId;col.fk_column_id=pk.columnId;
+  inv(col.table_id);
+  api('createRelation',{fk_column_id:src.columnId,pk_table_id:pk.tableId,pk_column_id:pk.columnId})
+    .catch(e=>toast('Ошибка: '+e.message,'err'));
+  toast('Связь создана ✓','ok');R();renderPanel();renderSbRight();
+}
+
+// ═══════════════════════════════════════════════════════════
+// MODAL HELPERS
+// ═══════════════════════════════════════════════════════════
+function showM(id){document.getElementById(id).classList.add('show');setTimeout(()=>{const i=document.querySelector(`#${id} input`);if(i)i.focus();},70);}
+function closeM(id){
+  document.getElementById(id).classList.remove('show');
+  // Reset export-ss modal on close
+  if(id==='m-export-ss'){
+    document.getElementById('ess-preview').style.display='block';
+    document.getElementById('ess-result').style.display='none';
+    document.getElementById('ess-progress').style.display='none';
+    document.getElementById('ess-footer').style.display='flex';
+    const goBtn=document.getElementById('ess-btn-go');
+    if(goBtn){goBtn.style.display='';goBtn.disabled=false;}
+    const cancelBtn=document.querySelector('#m-export-ss .cancel');
+    if(cancelBtn)cancelBtn.textContent='Отмена';
+  }
+}
+document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)closeM(el.id);}));
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape')document.querySelectorAll('.overlay.show').forEach(el=>closeM(el.id));
+  if(e.key==='Delete'&&S.table&&!document.querySelector('.overlay.show'))delTable();
+});
+let confCb=null;
+function conf(title,msg,cb){document.getElementById('conf-title').textContent=title;document.getElementById('conf-msg').textContent=msg;confCb=cb;showM('m-confirm');}
+document.getElementById('conf-ok').addEventListener('click',()=>{closeM('m-confirm');if(confCb){confCb();confCb=null;}});
+
+// ═══════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════
+function toast(msg,type='inf'){
+  const el=document.createElement('div');el.className=`toast ${type}`;el.textContent=msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(()=>{el.style.transition='opacity .22s';el.style.opacity='0';setTimeout(()=>el.remove(),230);},2500);
+}
+</script>

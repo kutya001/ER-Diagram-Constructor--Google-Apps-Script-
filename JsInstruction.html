@@ -1,0 +1,117 @@
+<script>// ═══════════════════════════════════════════════════════════
+// INSTRUCTION
+// ═══════════════════════════════════════════════════════════
+let instEditMode=false;
+const INST_KEY='er_instruction';
+const DEFAULT_INSTRUCTION=`# Инструкция по использованию ER Diagram Constructor
+
+## 🚀 Быстрый старт
+1. **Создайте схему БД** — нажмите «＋» рядом с выпадающим списком схем
+2. **Добавьте таблицы** — кнопка «＋ Таблица» в топбаре или ПКМ по холсту
+3. **Добавьте колонки** — в правой панели → «Колонки» → «＋ Добавить колонку»
+4. **Создайте связи** — потяните ● справа от FK-колонки к PK другой таблицы
+
+## 📋 Схемы
+- **Создать**: кнопка «＋» → введите название
+- **Копировать**: кнопка 📋 (только для оригинальных схем, не для копий)
+- **Контекстное меню**: ПКМ по схеме в левой панели
+- **Раскрыть/скрыть копии**: стрелка ▶ у схемы или ПКМ → «Раскрыть/скрыть»
+
+## 🗂 Таблицы
+- **Переместить**: перетащить карточку
+- **Редактировать**: двойной клик по заголовку или ПКМ
+- **Удалить**: ПКМ → «Удалить таблицу» или Delete на клавиатуре
+
+## 🔗 Связи (FK → PK)
+- Тяните **●** справа от колонки (только FK-тип) к PK-колонке другой таблицы
+- Для создания связи источник должен быть типа **fk**, цель — **pk**
+- Посмотреть все связи: кнопка «🔗 Связи» в топбаре
+- Удалить связь: ПКМ по линии или кнопка «🔗» в панели колонок
+
+## 🏗 Листы Google Таблицы
+- Откройте «🏗 Листы» → вкладка «📋 Управление»
+- Создавайте/пересоздавайте/удаляйте листы отдельно или массово (чекбоксы)
+- Кнопка «🔄 Пересоздать всю схему» — пересоздаёт все листы
+
+## 🤖 AI — JSON
+- Вкладка «{ } JSON» → «🤖 ИИ Промт» — скопируйте промт для ChatGPT/Claude
+- Вставьте JSON от ИИ в «📥 Импорт JSON» → нажмите «Импортировать»
+
+## ⌨️ Горячие клавиши
+- **Delete** — удалить выбранную таблицу
+- **Escape** — закрыть модальное окно
+- **Колесо мыши** — масштаб
+- **Перетащить фон** — панорамирование
+`;
+
+async function openInstruction(){
+  instEditMode=false;
+  document.getElementById('inst-edit-btn').style.display='inline-block';
+  document.getElementById('inst-save-btn').style.display='none';
+  showM('m-inst');
+  // Load from backend or localStorage
+  try{
+    const raw=await api('getInstruction',{});
+    const text=raw?.text||DEFAULT_INSTRUCTION;
+    const upd=raw?.updated_at?`Обновлено: ${fmtD(raw.updated_at)}`:'';
+    document.getElementById('inst-saved-at').textContent=upd;
+    renderInstView(text);
+  }catch{
+    const local=localStorage.getItem(INST_KEY)||DEFAULT_INSTRUCTION;
+    renderInstView(local);
+    document.getElementById('inst-saved-at').textContent='(локальная копия)';
+  }
+}
+
+function renderInstView(text){
+  // Simple markdown-like render
+  const html=text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/^### (.+)$/gm,'<h4 style="margin:14px 0 5px;font-size:13px;color:var(--accent)">$1</h4>')
+    .replace(/^## (.+)$/gm,'<h3 style="margin:16px 0 7px;font-size:14px;color:var(--text)">$1</h3>')
+    .replace(/^# (.+)$/gm,'<h2 style="margin:0 0 12px;font-size:16px;color:var(--accent);border-bottom:1px solid var(--border);padding-bottom:8px">$1</h2>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/`(.+?)`/g,'<code style="background:var(--s3);padding:1px 5px;border-radius:3px;font-size:11px">$1</code>')
+    .replace(/^- (.+)$/gm,'<li style="margin:3px 0">$1</li>')
+    .replace(/^(\d+)\. (.+)$/gm,'<li style="margin:3px 0"><strong>$1.</strong> $2</li>')
+    .replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
+  document.getElementById('inst-body').innerHTML=`<div style="line-height:1.7;font-size:13px">${html}</div>`;
+}
+
+function toggleInstEdit(){
+  instEditMode=!instEditMode;
+  const editBtn=document.getElementById('inst-edit-btn');
+  const saveBtn=document.getElementById('inst-save-btn');
+  if(instEditMode){
+    editBtn.style.display='none';saveBtn.style.display='inline-block';
+    // Get current text
+    const cur=document.getElementById('inst-body').innerText||DEFAULT_INSTRUCTION;
+    api('getInstruction',{}).then(raw=>{
+      const text=raw?.text||DEFAULT_INSTRUCTION;
+      document.getElementById('inst-body').innerHTML=`<textarea id="inst-ta" style="width:100%;min-height:400px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:10px;font-size:12px;line-height:1.7;resize:vertical;font-family:inherit" spellcheck="false">${text}</textarea>`;
+    }).catch(()=>{
+      const text=localStorage.getItem(INST_KEY)||DEFAULT_INSTRUCTION;
+      document.getElementById('inst-body').innerHTML=`<textarea id="inst-ta" style="width:100%;min-height:400px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:10px;font-size:12px;line-height:1.7;resize:vertical;font-family:inherit" spellcheck="false">${text}</textarea>`;
+    });
+  }else{
+    editBtn.style.display='inline-block';saveBtn.style.display='none';
+    const ta=document.getElementById('inst-ta');
+    if(ta)renderInstView(ta.value);
+  }
+}
+
+async function saveInstruction(){
+  const ta=document.getElementById('inst-ta');
+  if(!ta){toast('Нечего сохранять','err');return;}
+  const text=ta.value;
+  localStorage.setItem(INST_KEY,text);
+  try{
+    await api('saveInstruction',{text});
+    toast('Инструкция сохранена','ok');
+  }catch{toast('Сохранено локально','inf');}
+  instEditMode=false;
+  document.getElementById('inst-edit-btn').style.display='inline-block';
+  document.getElementById('inst-save-btn').style.display='none';
+  document.getElementById('inst-saved-at').textContent=`Обновлено: ${fmtD(new Date().toISOString())}`;
+  renderInstView(text);
+}</script>

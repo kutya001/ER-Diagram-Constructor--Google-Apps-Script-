@@ -1,0 +1,383 @@
+<script>
+// ═══════════════════════════════════════════════════════════
+// JSON / AI — multi-tab: export, import, AI prompt, system dump
+// ═══════════════════════════════════════════════════════════
+let jData=null, jTab='export', sysDump=null;
+
+const AI_PROMPT_TEMPLATE = `# ER Diagram Constructor — AI JSON Schema Builder
+# Версия: 1.0 | Используй этот промт для генерации схем БД в JSON формате
+
+## Инструкция для ИИ
+Ты — помощник по проектированию баз данных. Твоя задача — генерировать JSON схемы
+в строгом формате для импорта в ER Diagram Constructor.
+
+## Формат JSON схемы (СТРОГО соблюдай структуру)
+
+\`\`\`json
+{
+  "schema": {
+    "name": "Название схемы",
+    "description": "Описание схемы"
+  },
+  "tables": [
+    {
+      "name": "table_name",
+      "description": "Описание таблицы",
+      "category": "Название категории (опционально)",
+      "assignment": "Назначение (опционально)",
+      "position": { "x": 60, "y": 60 },
+      "columns": [
+        {
+          "name": "id",
+          "description": "Первичный ключ",
+          "type": "pk",
+          "is_pk": true,
+          "is_fk": false
+        },
+        {
+          "name": "name",
+          "description": "Название",
+          "type": "str",
+          "is_pk": false,
+          "is_fk": false
+        },
+        {
+          "name": "category_id",
+          "description": "Ссылка на категорию",
+          "type": "fk",
+          "is_pk": false,
+          "is_fk": true,
+          "fk_table": "categories",
+          "fk_column": "id"
+        }
+      ]
+    }
+  ]
+}
+\`\`\`
+
+## Допустимые типы колонок (поле "type")
+| type       | Описание                        |
+|------------|---------------------------------|
+| pk         | Первичный ключ (AUTO INCREMENT) |
+| fk         | Внешний ключ                    |
+| int        | Целое число                     |
+| bigint     | Большое целое                   |
+| float      | Число с плавающей точкой        |
+| bool       | Булево (true/false)             |
+| str        | Строка (VARCHAR)                |
+| text       | Длинный текст                   |
+| date       | Дата                            |
+| time       | Время                           |
+| datetime   | Дата и время                    |
+| uuid       | UUID                            |
+| json       | JSON объект                     |
+
+## Правила
+1. Каждая таблица ДОЛЖНА иметь ровно одну колонку с type="pk"
+2. FK-колонки: укажи fk_table (имя таблицы) и fk_column (обычно "id")
+3. Позиции (position.x, position.y): располагай таблицы в сетке с шагом 280×220
+4. Названия таблиц и колонок: snake_case, только латиница
+5. Не добавляй лишних полей — только те что в формате выше
+
+## Пример запроса
+"Создай схему для интернет-магазина с таблицами: товары, категории, пользователи, заказы, позиции заказа"
+
+## Системные справочники (доступные категории и назначения)
+{{SYSTEM_DATA}}
+
+## Текущая схема (для контекста)
+{{CURRENT_SCHEMA}}
+`;
+
+function openJson(){
+  jData=null;sysDump=null;
+  const title=S.schema?`{ } JSON · ${S.schema.name}`:'{ } JSON / Импорт';
+  document.getElementById('json-title').textContent=title;
+  // If no schema active — open import tab directly
+  const startTab=S.schema?'export':'import';
+  // Hide export tab if no schema
+  document.querySelectorAll('.json-tab').forEach(el=>{
+    const isExport=el.dataset.jt==='export';
+    el.style.opacity=(isExport&&!S.schema)?'0.35':'1';
+    el.style.pointerEvents=(isExport&&!S.schema)?'none':'';
+    el.title=(isExport&&!S.schema)?'Выберите схему для экспорта':'';
+  });
+  switchJsonTab(startTab);
+  showM('m-json');
+}
+
+function switchJsonTab(t){
+  jTab=t;
+  document.querySelectorAll('.json-tab').forEach(el=>el.classList.toggle('on',el.dataset.jt===t));
+  if(t==='export')renderJsonExport();
+  else if(t==='import')renderJsonImport();
+  else if(t==='ai')renderJsonAI();
+  else renderJsonSys();
+}
+
+// ── EXPORT tab ───────────────────────────────────────────────
+async function renderJsonExport(){
+  const b=document.getElementById('json-tab-body');
+  b.innerHTML='<div style="text-align:center;padding:20px;color:var(--t2)">⏳ Загрузка…</div>';
+  try{
+    jData=await api('exportSchemaJson',{schema_id:S.schema.id});
+    const meta=[{l:'Таблиц',v:jData.meta.table_count},{l:'Колонок',v:jData.meta.column_count},{l:'Связей',v:jData.meta.relation_count}];
+    b.innerHTML=`
+      <div style="display:flex;gap:9px;flex-wrap:wrap;flex-shrink:0">
+        ${meta.map(m=>`<div style="padding:5px 14px;background:var(--s2);border:1px solid var(--border);border-radius:6px;text-align:center">
+          <div style="font-size:17px;font-weight:700;color:var(--accent)">${m.v}</div><div class="sm">${m.l}</div></div>`).join('')}
+      </div>
+      <div id="json-out" style="flex:1"></div>
+      <div style="display:flex;gap:7px;flex-shrink:0">
+        <button onclick="copyJsonExport()" style="flex:1;padding:8px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:12px">📋 Копировать JSON</button>
+        <button onclick="dlJson()" style="flex:1;padding:8px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-weight:600;font-size:12px">⬇ Скачать .json</button>
+        <button onclick="switchJsonTab('ai');buildAiPromptWithSchema()" style="flex:1;padding:8px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-weight:600;font-size:12px">🤖 Открыть в ИИ</button>
+      </div>`;
+    document.getElementById('json-out').innerHTML=syntaxHighlight(JSON.stringify(jData,null,2));
+  }catch(e){b.innerHTML=`<div style="color:var(--red)">Ошибка: ${esc(e.message)}</div>`;}
+}
+
+function copyJsonExport(){
+  if(!jData)return;
+  const t=JSON.stringify(jData,null,2);
+  (navigator.clipboard?.writeText(t)||Promise.reject())
+    .then(()=>toast('Скопировано','ok'))
+    .catch(()=>{const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Скопировано','ok');});
+}
+// Legacy alias
+function copyJson(){copyJsonExport();}
+
+function dlJson(){
+  if(!jData)return;
+  const n=(S.schema?.name||'schema').replace(/[^\w\u0400-\u04FF]/g,'_');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(jData,null,2)],{type:'application/json'}));
+  a.download=`${n}.json`;document.body.appendChild(a);a.click();document.body.removeChild(a);
+  toast('Скачан','ok');
+}
+
+function syntaxHighlight(str){
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,m=>{
+      if(/^"/.test(m))return/:$/.test(m)?`<span class="jk">${m}</span>`:`<span class="js">${m}</span>`;
+      if(/true|false/.test(m))return`<span class="jb">${m}</span>`;
+      if(/null/.test(m))return`<span class="jnu">${m}</span>`;
+      return`<span class="jn">${m}</span>`;
+    });
+}
+
+// ── IMPORT tab ───────────────────────────────────────────────
+function renderJsonImport(){
+  const b=document.getElementById('json-tab-body');
+  b.innerHTML=`
+    <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:12px;flex-shrink:0">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--accent)">📥 Импорт схемы из JSON</div>
+      <p class="sm" style="margin-bottom:10px">Вставьте JSON схему (от ИИ или экспортированный файл). Система автоматически создаст все таблицы, колонки и связи.</p>
+      <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+          <input type="checkbox" id="imp-overwrite"> Перезаписать если схема существует
+        </label>
+        <button onclick="document.getElementById('imp-file').click()" style="padding:4px 11px;background:var(--s3);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:11px">📁 Загрузить .json файл</button>
+        <input type="file" id="imp-file" accept=".json,application/json" style="display:none" onchange="loadJsonFile(event)">
+      </div>
+    </div>
+    <textarea id="imp-json" class="ai-prompt-area" placeholder='Вставьте JSON схему сюда...\n\nПример:\n{\n  "schema": { "name": "Моя схема" },\n  "tables": [...]\n}'></textarea>
+    <div style="background:#5b8dee11;border:1px solid #5b8dee44;border-radius:7px;padding:10px;flex-shrink:0">
+      <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:5px">💡 Как использовать с ИИ</div>
+      <ol style="font-size:11px;color:var(--t2);padding-left:18px;line-height:1.8">
+        <li>Перейдите на вкладку <strong style="color:var(--text)">🤖 ИИ Промт</strong> и скопируйте промт</li>
+        <li>Вставьте промт в ChatGPT / Claude / Gemini с вашим описанием схемы</li>
+        <li>Скопируйте JSON-ответ ИИ и вставьте сюда</li>
+        <li>Нажмите <strong style="color:var(--text)">Импортировать</strong></li>
+      </ol>
+    </div>
+    <div style="display:flex;gap:7px;flex-shrink:0">
+      <button onclick="validateImportJson()" style="flex:1;padding:9px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-weight:600;font-size:12px">✓ Проверить JSON</button>
+      <button onclick="doImportJson()" style="flex:2;padding:9px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:12px">📥 Импортировать схему</button>
+    </div>
+    <div id="imp-status"></div>
+  `;
+}
+
+function loadJsonFile(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const parsed=JSON.parse(ev.target.result);
+      document.getElementById('imp-json').value=JSON.stringify(parsed,null,2);
+      toast('Файл загружен','ok');
+    }catch{toast('Ошибка парсинга JSON','err');}
+  };
+  reader.readAsText(file);
+}
+
+function validateImportJson(){
+  const raw=document.getElementById('imp-json')?.value?.trim();
+  const st=document.getElementById('imp-status');
+  if(!raw){st.innerHTML='<div style="color:var(--red);margin-top:8px;font-size:12px">⚠ Вставьте JSON</div>';return;}
+  try{
+    const j=JSON.parse(raw);
+    if(!j.schema||!j.schema.name){st.innerHTML='<div style="color:var(--red);margin-top:8px;font-size:12px">✗ Отсутствует schema.name</div>';return;}
+    if(!Array.isArray(j.tables)){st.innerHTML='<div style="color:var(--red);margin-top:8px;font-size:12px">✗ Отсутствует массив tables</div>';return;}
+    const tCount=j.tables.length;
+    const cCount=j.tables.reduce((s,t)=>s+(t.columns||[]).length,0);
+    const relCount=j.tables.reduce((s,t)=>s+(t.columns||[]).filter(c=>c.is_fk).length,0);
+    st.innerHTML=`<div style="margin-top:8px;padding:8px 12px;background:#27ae6022;border:1px solid #27ae6066;border-radius:5px;font-size:12px;color:#60f0a0">
+      ✓ JSON валидный — Схема: <strong>${esc(j.schema.name)}</strong> · ${tCount} таблиц · ${cCount} колонок · ${relCount} связей
+    </div>`;
+  }catch(e){
+    st.innerHTML=`<div style="color:var(--red);margin-top:8px;font-size:12px">✗ Ошибка парсинга: ${esc(e.message)}</div>`;
+  }
+}
+
+async function doImportJson(){
+  const raw=document.getElementById('imp-json')?.value?.trim();
+  const overwrite=document.getElementById('imp-overwrite')?.checked;
+  if(!raw){toast('Вставьте JSON','err');return;}
+  let j;
+  try{j=JSON.parse(raw);}catch(e){toast('Ошибка JSON: '+e.message,'err');return;}
+  if(!j.schema||!Array.isArray(j.tables)){toast('Неверный формат JSON','err');return;}
+  const st=document.getElementById('imp-status');
+  st.innerHTML='<div style="margin-top:8px;color:var(--accent);font-size:12px"><span class="sync-spin">↻</span> Импорт схемы…</div>';
+  setSyncState('syncing');
+  try{
+    const r=await api('importSchemaJson',{json:j,overwrite});
+    // Reload all data
+    await loadAll();
+    inv();
+    // Select new schema
+    selSchema(String(r.schema_id));
+    setSyncState('synced');
+    closeM('m-json');
+    toast(`Схема «${r.schema_name}» импортирована: ${r.tables_count} таблиц`,'ok');
+  }catch(e){
+    setSyncState('error');
+    st.innerHTML=`<div style="color:var(--red);margin-top:8px;font-size:12px">✗ Ошибка: ${esc(e.message)}</div>`;
+    toast('Ошибка импорта: '+e.message,'err');
+  }
+}
+
+// ── AI PROMPT tab ─────────────────────────────────────────────
+async function renderJsonAI(){
+  const b=document.getElementById('json-tab-body');
+  b.innerHTML=`
+    <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:12px;flex-shrink:0">
+      <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:5px">🤖 Промт для ИИ-помощников</div>
+      <p class="sm">Скопируйте этот промт и вставьте в ChatGPT, Claude, Gemini или другой ИИ вместе с описанием вашей схемы. ИИ вернёт готовый JSON для импорта.</p>
+    </div>
+    <textarea id="ai-prompt-out" class="ai-prompt-area" readonly style="flex:1;min-height:340px">Генерация промта…</textarea>
+    <div style="display:flex;gap:7px;flex-shrink:0">
+      <button onclick="copyAiPrompt()" style="flex:1;padding:9px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:12px">📋 Копировать промт</button>
+      <button onclick="buildAiPromptWithSchema()" style="padding:9px 14px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-size:12px">↻ Обновить</button>
+    </div>
+    <div style="background:#f39c1211;border:1px solid #f39c1244;border-radius:7px;padding:10px;font-size:11px;color:var(--t2);flex-shrink:0">
+      <strong style="color:var(--orange)">💡 Совет:</strong> После получения JSON от ИИ — перейдите на вкладку <strong style="color:var(--text)">📥 Импорт JSON</strong> и вставьте ответ туда.
+    </div>
+  `;
+  buildAiPromptWithSchema();
+}
+
+async function buildAiPromptWithSchema(){
+  const ta=document.getElementById('ai-prompt-out');
+  if(!ta)return;
+  ta.value='⏳ Подготовка промта…';
+  try{
+    // Gather system data for context
+    const sysData={
+      categories: S.cats.map(c=>({id:c.id,name:c.name})),
+      assignments: S.asgs.map(a=>({id:a.id,name:a.name})),
+      column_types: S.ctypes.map(t=>({designation:t.designation,name:t.name,description:t.description||''})),
+    };
+    let currentSchemaStr='(схема не выбрана)';
+    if(S.schema && jData){
+      currentSchemaStr=JSON.stringify({schema:jData.schema,meta:jData.meta,table_names:jData.tables.map(t=>t.name)},null,2);
+    } else if(S.schema){
+      currentSchemaStr=`Схема: ${S.schema.name} (${schTables().length} таблиц)`;
+    }
+    const prompt=AI_PROMPT_TEMPLATE
+      .replace('{{SYSTEM_DATA}}',JSON.stringify(sysData,null,2))
+      .replace('{{CURRENT_SCHEMA}}',currentSchemaStr);
+    ta.value=prompt;
+  }catch(e){ta.value='Ошибка: '+e.message;}
+}
+
+function copyAiPrompt(){
+  const ta=document.getElementById('ai-prompt-out');if(!ta)return;
+  const t=ta.value;
+  (navigator.clipboard?.writeText(t)||Promise.reject())
+    .then(()=>toast('Промт скопирован','ok'))
+    .catch(()=>{ta.select();document.execCommand('copy');toast('Скопировано','ok');});
+}
+
+// ── SYSTEM DATA tab ───────────────────────────────────────────
+async function renderJsonSys(){
+  const b=document.getElementById('json-tab-body');
+  b.innerHTML='<div style="text-align:center;padding:20px;color:var(--t2)">⏳ Загрузка системных данных…</div>';
+  try{
+    const raw=await api('getSystemDump',{});
+    sysDump=Array.isArray(raw)?raw:(raw&&raw.data?raw.data:raw);
+    b.innerHTML=`
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:12px;flex-shrink:0">
+        <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:5px">🗄 Системные справочники и данные</div>
+        <p class="sm">Полный дамп всех системных таблиц — полезен для передачи ИИ полного контекста системы.</p>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0" id="sys-tab-btns">
+        ${Object.keys(sysDump||{}).map(k=>`<button onclick="showSysTable('${k}')" class="sys-tab-btn" data-sk="${k}" style="padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600;background:var(--s2);color:var(--t2);border:1px solid var(--border)">${k}</button>`).join('')}
+      </div>
+      <div id="sys-data-view" style="flex:1;overflow-y:auto;min-height:0"></div>
+      <div style="display:flex;gap:7px;flex-shrink:0">
+        <button onclick="copySysDump()" style="flex:1;padding:8px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-weight:600;font-size:12px">📋 Копировать весь дамп JSON</button>
+        <button onclick="dlSysDump()" style="flex:1;padding:8px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-weight:600;font-size:12px">⬇ Скачать system_dump.json</button>
+      </div>
+    `;
+    // Show first table by default
+    const keys=Object.keys(sysDump||{});
+    if(keys.length)showSysTable(keys[0]);
+  }catch(e){b.innerHTML=`<div style="color:var(--red);padding:12px">Ошибка: ${esc(e.message)}</div>`;}
+}
+
+function showSysTable(key){
+  document.querySelectorAll('.sys-tab-btn').forEach(b=>{
+    b.style.background=b.dataset.sk===key?'var(--accent)':'var(--s2)';
+    b.style.color=b.dataset.sk===key?'#fff':'var(--t2)';
+  });
+  const rows=sysDump?sysDump[key]:[];
+  const el=document.getElementById('sys-data-view');
+  if(!el)return;
+  if(!rows||!rows.length){el.innerHTML=`<div class="sm" style="padding:8px">Нет данных в "${key}"</div>`;return;}
+  const headers=Object.keys(rows[0]);
+  const isDateCol=h=>h==='create_date_time'||h==='update_date_time'||h.endsWith('_at')||h.endsWith('_date');
+  const fmtCell=(h,v)=>{
+    if(!v)return'—';
+    if(isDateCol(h))return fmtD(v);
+    return String(v);
+  };
+  el.innerHTML=`<div style="overflow-x:auto;max-height:36vh;margin-top:4px">
+    <table class="dpreview">
+      <thead><tr>${headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(r=>`<tr>${headers.map(h=>{
+        const raw=r[h]??'';
+        const disp=fmtCell(h,raw);
+        return`<td title="${ea(String(raw))}">${esc(disp)}</td>`;
+      }).join('')}</tr>`).join('')}</tbody>
+    </table>
+  </div><div class="sm" style="margin-top:5px;padding:2px 4px">${rows.length} строк в "${key}"</div>`;
+}
+
+function copySysDump(){
+  if(!sysDump)return;
+  const t=JSON.stringify(sysDump,null,2);
+  (navigator.clipboard?.writeText(t)||Promise.reject()).then(()=>toast('Дамп скопирован','ok')).catch(()=>{
+    const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Скопировано','ok');
+  });
+}
+function dlSysDump(){
+  if(!sysDump)return;
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(sysDump,null,2)],{type:'application/json'}));
+  a.download='system_dump.json';document.body.appendChild(a);a.click();document.body.removeChild(a);
+  toast('Скачан','ok');
+}
+</script>

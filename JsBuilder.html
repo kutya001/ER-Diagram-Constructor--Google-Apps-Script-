@@ -1,0 +1,482 @@
+<script>
+// ═══════════════════════════════════════════════════════════
+// SHEET BUILDER
+// ═══════════════════════════════════════════════════════════
+let bldTab='manage', bldAnalysis=null, bldSheets=[];
+
+async function openBuilder(){
+  if(!S.schema)return;
+  bldTab='manage'; bldAnalysis=null; bldSheets=[];
+  renderBldTabs();
+  document.getElementById('bld-body').innerHTML='<div style="text-align:center;padding:20px;color:var(--t2)">Загрузка…</div>';
+  showM('m-builder');
+  await refreshBldManage();
+}
+
+function renderBldTabs(){
+  document.querySelectorAll('.bld-tab').forEach(tab=>{
+    tab.classList.toggle('on',tab.dataset.bt===bldTab);
+    tab.onclick=()=>{bldTab=tab.dataset.bt;renderBldTabs();dispatchBldTab();};
+  });
+}
+function dispatchBldTab(){
+  if(bldTab==='manage')refreshBldManage();
+  else if(bldTab==='analyse')refreshBldAnalyse();
+  else refreshBldPreview();
+}
+
+// ── MANAGE TAB ──────────────────────────────────────────────
+async function refreshBldManage(){
+  const b=document.getElementById('bld-body');
+  b.innerHTML='<div style="text-align:center;padding:20px;color:var(--t2)">⏳ Загрузка листов…</div>';
+  try{
+    const raw=await api('listSheets',{});
+    // raw is the data field: either array directly or {data:[...]} depending on GAS version
+    const sheets=Array.isArray(raw)?raw:(raw&&Array.isArray(raw.data)?raw.data:[]);
+    bldSheets=sheets;
+    renderBldManage(sheets);
+  }catch(e){b.innerHTML=`<div style="color:var(--red);padding:12px">Ошибка: ${esc(e.message)}</div>`;}
+}
+
+function renderBldManage(sheets){
+  const b=document.getElementById('bld-body');
+  const ts=schTables();
+  const sheetNames=new Set((sheets||[]).map(s=>s.name));
+  const sheetInfo={}; (sheets||[]).forEach(s=>{sheetInfo[s.name]={rows:s.rows,cols:s.cols};});
+
+  // Collect all unique names: schema tables + extra sheets
+  const extraSheets=(sheets||[]).filter(s=>!ts.find(t=>t.name===s.name));
+
+  b.innerHTML=`
+    <!-- Bulk bar -->
+    <div id="bld-bulk-bar">
+      <span class="bld-bulk-count" id="bld-bulk-count">0 выбрано</span>
+      <button class="bld-bulk-btn primary" onclick="bldBulkCreate()">➕ Создать</button>
+      <button class="bld-bulk-btn" onclick="bldBulkRecreate()">🔄 Пересоздать</button>
+      <button class="bld-bulk-btn danger" onclick="bldBulkDelete()">🗑 Удалить</button>
+      <button onclick="bldSelAll(true)" style="padding:3px 8px;border-radius:3px;font-size:10px;background:var(--s3);border:1px solid var(--border);color:var(--t2)">Все</button>
+      <button onclick="bldSelAll(false)" style="padding:3px 8px;border-radius:3px;font-size:10px;background:var(--s3);border:1px solid var(--border);color:var(--t2)">Снять</button>
+    </div>
+
+    <!-- Options & action buttons -->
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+        <input type="checkbox" id="bld-ex" checked> Примеры
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px">
+        Строк: <input type="number" id="bld-rows" value="3" min="1" max="20"
+          style="width:44px;padding:2px 5px;background:var(--s3);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:11px"/>
+      </label>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-left:4px">
+        <button onclick="bldCreateAll()" style="padding:5px 10px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:11px">➕ Создать недостающие</button>
+        <button onclick="bldReCreateAll()" style="padding:5px 10px;background:var(--a2);color:#fff;border-radius:5px;font-weight:600;font-size:11px">🔄 Пересоздать всю схему</button>
+        <button onclick="bldDeleteAll()" style="padding:5px 10px;background:var(--red);color:#fff;border-radius:5px;font-weight:600;font-size:11px">🗑 Удалить все</button>
+        <button onclick="refreshBldManage()" style="padding:5px 9px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:5px;font-size:11px">↻</button>
+      </div>
+    </div>
+
+    <!-- Unified table -->
+    <div class="bld-table-wrap">
+      <table class="bld-uni">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="bld-sel-all" onchange="bldSelAll(this.checked)" style="accent-color:var(--accent)"></th>
+            <th>Таблица / Лист</th>
+            <th>Источник</th>
+            <th>Статус листа</th>
+            <th>Строк</th>
+            <th>Столбцов</th>
+            <th>Категория</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${ts.map(t=>{
+            const exists=sheetNames.has(t.name);
+            const cat=S.cats.find(c=>String(c.id)===String(t.category_id));
+            const cc=getCatColorFE(t.category_id);
+            const si=sheetInfo[t.name];
+            return`<tr>
+              <td><input type="checkbox" class="bld-chk" data-tid="${t.id}" data-name="${ea(t.name)}" data-exists="${exists}" onchange="bldChkChanged()" style="accent-color:var(--accent)"></td>
+              <td style="font-weight:600;white-space:nowrap"><span style="width:8px;height:8px;border-radius:50%;background:${cc};display:inline-block;margin-right:5px;vertical-align:middle"></span>${esc(t.name)}</td>
+              <td><span style="font-size:10px;padding:2px 6px;border-radius:8px;background:var(--accent)22;color:var(--accent)">Схема</span></td>
+              <td><span class="${exists?'st-ok':'st-miss'}">${exists?'✓ Создан':'✗ Нет'}</span></td>
+              <td style="text-align:right;color:var(--t2)">${si?si.rows:'—'}</td>
+              <td style="text-align:right;color:var(--t2)">${si?si.cols:'—'}</td>
+              <td style="color:var(--t2);font-size:11px">${esc(cat?.name||'—')}</td>
+              <td>
+                <div style="display:flex;gap:3px">
+                  <button onclick="bldCreate(${t.id})" title="${exists?'Пересоздать':'Создать'}" style="padding:2px 7px;border-radius:3px;font-size:10px;background:var(--s3);color:var(--text);border:1px solid var(--border)">${exists?'🔄':'➕'}</button>
+                  <button onclick="bldAddEx(${t.id})" title="Примеры" ${!exists?'disabled':''} style="padding:2px 7px;border-radius:3px;font-size:10px;background:var(--s3);color:var(--text);border:1px solid var(--border)">📊</button>
+                  <button onclick="bldDelSheet('${ea(t.name)}')" title="Удалить лист" ${!exists?'disabled':''} style="padding:2px 7px;border-radius:3px;font-size:10px;background:none;color:var(--red);border:1px solid transparent">🗑</button>
+                </div>
+              </td>
+            </tr>`;
+          }).join('')}
+          ${extraSheets.map(s=>`<tr style="background:var(--orange)08">
+            <td><input type="checkbox" class="bld-chk-extra" data-name="${ea(s.name)}" data-exists="true" onchange="bldChkChanged()" style="accent-color:var(--accent)"></td>
+            <td style="font-weight:600;white-space:nowrap">📄 ${esc(s.name)}</td>
+            <td><span class="st-extra">Лишний</span></td>
+            <td><span class="st-ok">✓ Создан</span></td>
+            <td style="text-align:right;color:var(--t2)">${s.rows}</td>
+            <td style="text-align:right;color:var(--t2)">${s.cols}</td>
+            <td>—</td>
+            <td>
+              <div style="display:flex;gap:3px">
+                <button onclick="bldPreviewSheet('${ea(s.name)}')" title="Просмотр" style="padding:2px 7px;border-radius:3px;font-size:10px;background:var(--s3);color:var(--text);border:1px solid var(--border)">👁</button>
+                <button onclick="bldDelSheet('${ea(s.name)}')" title="Удалить" style="padding:2px 7px;border-radius:3px;font-size:10px;background:none;color:var(--red);border:1px solid transparent">🗑</button>
+              </div>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:6px" class="sm">${ts.length} таблиц схемы · ${extraSheets.length} лишних листов</div>
+  `;
+}
+
+// Delete all sheets of current schema
+async function bldDeleteAll(){
+  const ts=schTables().filter(t=>bldSheets.find(s=>s.name===t.name));
+  if(!ts.length){toast('Нет созданных листов для удаления','inf');return;}
+  bldConfirm(`Удалить ВСЕ ${ts.length} листов схемы?`,'Все данные будут удалены безвозвратно.',async()=>{
+    for(const t of ts){
+      await api('deleteSchemaSheet',{sheet_name:t.name}).catch(e=>toast(`${t.name}: ${e.message}`,'err'));
+    }
+    toast(`Удалено: ${ts.length}`,'ok');refreshBldManage();
+  });
+}
+
+// Checkbox selection helpers
+function bldChkChanged(){
+  const checked=document.querySelectorAll('.bld-chk:checked').length;
+  const bar=document.getElementById('bld-bulk-bar');
+  const cnt=document.getElementById('bld-bulk-count');
+  if(bar)bar.classList.toggle('show',checked>0);
+  if(cnt)cnt.textContent=`${checked} выбрано`;
+}
+function bldSelAll(v){
+  document.querySelectorAll('.bld-chk').forEach(c=>c.checked=v);
+  const all=document.getElementById('bld-sel-all');
+  if(all)all.checked=v;
+  bldChkChanged();
+}
+function getCheckedTables(){
+  return Array.from(document.querySelectorAll('.bld-chk:checked')).map(c=>({
+    id:c.dataset.tid, name:c.dataset.name, exists:c.dataset.exists==='true'
+  }));
+}
+
+// Bulk operations
+async function bldBulkCreate(){
+  const sel=getCheckedTables().filter(t=>!t.exists);
+  if(!sel.length){toast('Нет новых таблиц для создания','inf');return;}
+  const ex=document.getElementById('bld-ex')?.checked;
+  const rows=document.getElementById('bld-rows')?.value||3;
+  bldConfirm(`Создать ${sel.length} листов?`,'',async()=>{
+    for(const t of sel){
+      await api('createSchemaTable',{schema_id:S.schema.id,table_id:t.id,with_examples:ex,example_rows:rows}).catch(e=>toast(`${t.name}: ${e.message}`,'err'));
+    }
+    toast(`Создано: ${sel.length}`,'ok');refreshBldManage();
+  },'Создать','var(--accent)');
+}
+async function bldBulkRecreate(){
+  const sel=getCheckedTables();
+  if(!sel.length){toast('Ничего не выбрано','inf');return;}
+  const ex=document.getElementById('bld-ex')?.checked;
+  const rows=document.getElementById('bld-rows')?.value||3;
+  bldConfirm(`Пересоздать ${sel.length} листов?`,'Существующие данные в них будут удалены.',async()=>{
+    for(const t of sel){
+      await api('createSchemaTable',{schema_id:S.schema.id,table_id:t.id,with_examples:ex,example_rows:rows}).catch(e=>toast(`${t.name}: ${e.message}`,'err'));
+    }
+    toast(`Пересоздано: ${sel.length}`,'ok');refreshBldManage();
+  },'Пересоздать','var(--a2)');
+}
+async function bldBulkDelete(){
+  const sel=getCheckedTables().filter(t=>t.exists);
+  if(!sel.length){toast('Нет существующих листов для удаления','inf');return;}
+  bldConfirm(`Удалить ${sel.length} листов?`,'Данные будут удалены безвозвратно.',async()=>{
+    for(const t of sel){
+      await api('deleteSchemaSheet',{sheet_name:t.name}).catch(e=>toast(`${t.name}: ${e.message}`,'err'));
+    }
+    toast(`Удалено: ${sel.length}`,'ok');refreshBldManage();
+  });
+}
+
+async function bldReCreateAll(){
+  const ts=schTables();
+  bldConfirm(`Пересоздать ВСЕ ${ts.length} таблиц схемы?`,
+    'Все существующие листы схемы будут пересозданы. Данные удалятся!',
+    async()=>{
+      const ex=document.getElementById('bld-ex')?.checked;
+      const rows=document.getElementById('bld-rows')?.value||3;
+      const b=document.getElementById('bld-body');
+      b.innerHTML='<div style="text-align:center;padding:24px;color:var(--t2)"><span class="sync-spin" style="font-size:22px;display:block;margin-bottom:8px">↻</span>Пересоздание всей схемы…</div>';
+      let created=0,errs=0;
+      for(const t of ts){
+        try{await api('createSchemaTable',{schema_id:S.schema.id,table_id:t.id,with_examples:ex,example_rows:rows});created++;}
+        catch(e){errs++;toast(`${t.name}: ${e.message}`,'err');}
+      }
+      toast(`Готово: создано ${created}${errs?', ошибок '+errs:''}`,errs?'err':'ok');
+      refreshBldManage();
+    },'Пересоздать всё','var(--red)');
+}
+
+// Inline confirm inside builder modal
+let bldConfCb=null;
+function bldConfirm(title,msg,cb,btnLabel='Удалить',btnColor='var(--red)'){
+  bldConfCb=cb;
+  const d=document.getElementById('bld-confirm');
+  document.getElementById('bld-conf-title').textContent=title;
+  document.getElementById('bld-conf-msg').textContent=msg;
+  const ok=document.getElementById('bld-conf-ok');
+  ok.textContent=btnLabel;ok.style.background=btnColor;
+  ok.onclick=()=>{bldConfClose();if(bldConfCb){bldConfCb();bldConfCb=null;}};
+  d.style.display='flex';
+}
+function bldConfCancel(){bldConfClose();}
+function bldConfClose(){document.getElementById('bld-confirm').style.display='none';}
+
+async function bldCreateAll(){
+  const ex=document.getElementById('bld-ex')?.checked;
+  const rows=document.getElementById('bld-rows')?.value||3;
+  const b=document.getElementById('bld-body');
+  b.innerHTML='<div style="text-align:center;padding:24px;color:var(--t2)"><span class="sync-spin" style="font-size:22px;display:block;margin-bottom:8px">↻</span>Создание таблиц…</div>';
+  try{
+    const raw=await api('createSchemaTables',{schema_id:S.schema.id,with_examples:ex,example_rows:rows});
+    const r=(raw&&raw.created)?raw:(raw&&raw.data?raw.data:{created:[],skipped:[]});
+    toast(`Создано: ${(r.created||[]).length}, пропущено: ${(r.skipped||[]).length}`,'ok');
+    await refreshBldManage();
+  }catch(e){toast('Ошибка: '+e.message,'err');await refreshBldManage();}
+}
+
+async function bldCreate(tableId){
+  const ex=document.getElementById('bld-ex')?.checked;
+  const rows=document.getElementById('bld-rows')?.value||3;
+  try{
+    await api('createSchemaTable',{schema_id:S.schema.id,table_id:tableId,with_examples:ex,example_rows:rows});
+    toast('Лист создан','ok');await refreshBldManage();
+  }catch(e){toast('Ошибка: '+e.message,'err');}
+}
+
+async function bldAddEx(tableId){
+  const rows=document.getElementById('bld-rows')?.value||3;
+  try{
+    const r=await api('addExampleData',{schema_id:S.schema.id,table_id:tableId,rows});
+    const added=(r&&r.added)?r.added:(r&&r.data?r.data.added:0);
+    toast(`Добавлено ${added} строк примеров`,'ok');
+  }catch(e){toast('Ошибка: '+e.message,'err');}
+}
+
+async function bldDelSheet(name){
+  bldConfirm(`Удалить лист «${name}»?`,'Данные будут удалены безвозвратно.',async()=>{
+    try{await api('deleteSchemaSheet',{sheet_name:name});toast('Лист удалён','ok');await refreshBldManage();}
+    catch(e){toast('Ошибка: '+e.message,'err');}
+  });
+}
+
+// ── ANALYSE TAB ─────────────────────────────────────────────
+async function refreshBldAnalyse(){
+  const b=document.getElementById('bld-body');
+  b.innerHTML='<div style="text-align:center;padding:20px;color:var(--t2)">⏳ Анализ структуры…</div>';
+  try{
+    const raw=await api('analyseSchema',{schema_id:S.schema.id});
+    // Normalize: raw might be the object directly or wrapped
+    const data=(raw&&raw.tables)?raw:(raw&&raw.data&&raw.data.tables?raw.data:null);
+    if(!data){throw new Error('Неверный ответ от сервера');}
+    bldAnalysis=data;
+    renderBldAnalyse(data);
+  }catch(e){b.innerHTML=`<div style="color:var(--red);padding:12px">Ошибка: ${esc(e.message)}</div>`;}
+}
+
+function renderBldAnalyse(data){
+  const b=document.getElementById('bld-body');
+  const okCount     = data.tables.filter(t=>t.status==='exists'&&t.cols.every(c=>c.status==='ok')&&!t.extra_cols.length).length;
+  const missingCount= data.missing_sheets.length;
+  const extraCount  = data.extra_sheets.length;
+  const warnCount   = data.tables.filter(t=>t.status==='exists'&&(t.cols.some(c=>c.status!=='ok')||t.extra_cols.length)).length;
+
+  b.innerHTML=`
+    <div style="display:flex;gap:9px;margin-bottom:14px;flex-wrap:wrap">
+      ${metaChip('✓ Соответствуют',okCount,'var(--green)','#1b5e20')}
+      ${metaChip('✗ Отсутствуют',  missingCount,'var(--red)','#b71c1c')}
+      ${metaChip('⚠ Несоответствие',warnCount,'var(--orange)','#e65100')}
+      ${metaChip('➕ Лишние листы', extraCount,'#9e9e9e','#424242')}
+    </div>
+
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <button onclick="bldFixAll()" style="padding:6px 14px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:12px">🔧 Исправить всё</button>
+      <button onclick="refreshBldAnalyse()" style="padding:6px 12px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:5px;font-size:12px">↻ Обновить анализ</button>
+    </div>
+
+    ${data.extra_sheets.length?`
+    <div style="background:#ff980011;border:1px solid #ff980044;border-radius:7px;padding:10px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--orange);margin-bottom:6px">⚠ Лишние листы (не в схеме)</div>
+      ${data.extra_sheets.map(n=>`<div style="display:flex;align-items:center;gap:7px;padding:3px 0;font-size:12px">
+        <span class="st-extra">Лишний</span>
+        <span style="flex:1">${esc(n)}</span>
+        <button onclick="bldDelSheet('${ea(n)}')" class="del-btn" style="padding:2px 7px;border-radius:3px;font-size:11px;background:var(--s3);color:var(--red);border:1px solid var(--border)">🗑 Удалить</button>
+      </div>`).join('')}
+    </div>`:''}
+
+    <div style="font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Таблицы схемы</div>
+    ${data.tables.map(t=>renderTableAnalysis(t)).join('')}
+  `;
+}
+
+function renderTableAnalysis(t){
+  const cat=S.cats.find(c=>String(c.id)===String(S.tables.find(tb=>tb.name===t.name)?.category_id));
+  const catC=getCatColorFE(S.tables.find(tb=>tb.name===t.name)?.category_id);
+  const allOk=t.status==='exists'&&t.cols.every(c=>c.status==='ok')&&!t.extra_cols.length;
+  const hasMissCols=t.cols.some(c=>c.status==='missing');
+  const hasWrongType=t.cols.some(c=>c.status==='wrong_type');
+  const hasExtra=t.extra_cols.length>0;
+  const statusCls=t.status==='missing'?'st-miss':allOk?'st-ok':'st-extra';
+  const statusTxt=t.status==='missing'?'✗ Отсутствует':allOk?'✓ Соответствует':'⚠ Несоответствие';
+
+  let colRows='';
+  if(t.status==='exists'){
+    colRows=t.cols.map(c=>{
+      const cls=c.status==='ok'?'st-ok':c.status==='missing'?'st-miss':'st-wtype';
+      const txt=c.status==='ok'?'ok':c.status==='missing'?'нет колонки':'неверный тип';
+      const detail=c.status==='wrong_type'?`<span class="sm"> · ожид. <b>${esc(c.expected_fmt)}</b>, факт <b>${esc(c.actual_fmt)}</b></span>`:'';
+      return`<div class="col-analysis-row">
+        <span class="cname">${esc(c.name)}</span>
+        <span class="sm">${esc(c.expected_type)}</span>
+        <span class="${cls}">${txt}</span>
+        ${detail}
+        ${c.status==='missing'?`<button onclick="bldAddColToSheet('${ea(t.name)}','${ea(c.name)}')" style="padding:1px 6px;border-radius:3px;font-size:10px;background:var(--s3);color:var(--text);border:1px solid var(--border)">➕</button>`:''}
+      </div>`;
+    }).join('')+
+    (hasExtra?t.extra_cols.map(cn=>`<div class="col-analysis-row" style="background:#ff980008">
+      <span class="cname">${esc(cn)}</span><span class="sm">—</span>
+      <span class="st-extra">лишний</span>
+      <button onclick="bldDelColFromSheet('${ea(t.name)}','${ea(cn)}')" style="padding:1px 6px;border-radius:3px;font-size:10px;background:var(--s3);color:var(--red);border:1px solid var(--border)">✕</button>
+    </div>`).join(''):'');
+  }
+
+  return`<div style="background:var(--s2);border:1px solid ${allOk?'var(--border)':t.status==='missing'?'var(--red)44':'var(--orange)44'};border-radius:7px;padding:10px;margin-bottom:8px">
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:${colRows?'8px':'0'}">
+      <span style="width:9px;height:9px;border-radius:50%;background:${catC};flex-shrink:0"></span>
+      <span style="font-size:13px;font-weight:700;flex:1">${esc(t.name)}</span>
+      <span class="${statusCls}">${statusTxt}</span>
+      <div style="display:flex;gap:4px">
+        <button onclick="bldCreate(${S.tables.find(tb=>tb.name===t.name)?.id})" style="padding:2px 8px;border-radius:3px;font-size:11px;background:var(--s3);color:var(--text);border:1px solid var(--border)">${t.status==='missing'?'➕ Создать':'🔄 Пересоздать'}</button>
+        ${t.status==='exists'?`<button onclick="bldDelSheet('${ea(t.name)}')" style="padding:2px 8px;border-radius:3px;font-size:11px;background:var(--s3);color:var(--red);border:1px solid var(--border)">🗑</button>`:''}
+      </div>
+    </div>
+    ${colRows?`<div style="border-top:1px solid var(--border);padding-top:7px">${colRows}</div>`:''}
+  </div>`;
+}
+
+function metaChip(label,val,color,bg){
+  return`<div style="padding:6px 14px;background:${bg}18;border:1px solid ${color}44;border-radius:6px;text-align:center;flex:1;min-width:100px">
+    <div style="font-size:19px;font-weight:700;color:${color}">${val}</div>
+    <div style="font-size:10px;color:var(--t2)">${label}</div>
+  </div>`;
+}
+
+async function bldFixAll(){
+  if(!bldAnalysis)return;
+  const ex=true,rows=3;
+  const missing=bldAnalysis.tables.filter(t=>t.status==='missing');
+  const wrong  =bldAnalysis.tables.filter(t=>t.status==='exists'&&t.cols.some(c=>c.status!=='ok'));
+  if(!missing.length&&!wrong.length){toast('Всё соответствует схеме','ok');return;}
+  const b=document.getElementById('bld-body');
+  b.innerHTML='<div style="text-align:center;padding:24px;color:var(--t2)">⏳ Исправление…</div>';
+  for(const t of missing){
+    const st=S.tables.find(tb=>tb.name===t.name);if(!st)continue;
+    await api('createSchemaTable',{schema_id:S.schema.id,table_id:st.id,with_examples:ex,example_rows:rows}).catch(()=>{});
+  }
+  for(const t of wrong){
+    const st=S.tables.find(tb=>tb.name===t.name);if(!st)continue;
+    await api('createSchemaTable',{schema_id:S.schema.id,table_id:st.id,with_examples:false,example_rows:0}).catch(()=>{});
+  }
+  toast('Исправление завершено','ok');await refreshBldAnalyse();
+}
+
+async function bldDelColFromSheet(sheetName,colName){
+  conf(`Удалить столбец "${colName}" из "${sheetName}"?`,'',async()=>{
+    try{await api('deleteSheetColumn',{sheet_name:sheetName,col_name:colName});toast('Столбец удалён','ok');await refreshBldAnalyse();}
+    catch(e){toast('Ошибка: '+e.message,'err');}
+  });
+}
+
+async function bldAddColToSheet(sheetName,colName){
+  // Can't add a single column server-side easily — suggest recreate
+  conf(`Добавить столбец "${colName}" — для этого нужно пересоздать лист "${sheetName}". Продолжить?`,'Существующие данные будут перезаписаны.',async()=>{
+    const t=S.tables.find(tb=>tb.name===sheetName);if(!t)return;
+    try{await api('createSchemaTable',{schema_id:S.schema.id,table_id:t.id,with_examples:false,example_rows:0});toast('Лист пересоздан','ok');await refreshBldAnalyse();}
+    catch(e){toast('Ошибка: '+e.message,'err');}
+  });
+}
+
+// ── PREVIEW TAB ─────────────────────────────────────────────
+async function refreshBldPreview(){
+  const b=document.getElementById('bld-body');
+  b.innerHTML='<div style="text-align:center;padding:20px;color:var(--t2)">⏳ Загрузка листов…</div>';
+  try{
+    const raw=await api('listSheets',{});
+    const sheets=Array.isArray(raw)?raw:(raw&&Array.isArray(raw.data)?raw.data:[]);
+    renderBldPreviewSelect(sheets);
+  }catch(e){b.innerHTML=`<div style="color:var(--red);padding:12px">Ошибка: ${esc(e.message)}</div>`;}
+}
+
+function renderBldPreviewSelect(sheets){
+  const b=document.getElementById('bld-body');
+  b.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <select id="bld-preview-sel" style="flex:1;padding:7px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:12px">
+        <option value="">— Выберите лист —</option>
+        ${(sheets||[]).map(s=>`<option value="${ea(s.name)}">${esc(s.name)} (${s.rows} стр.)</option>`).join('')}
+      </select>
+      <label style="display:flex;align-items:center;gap:5px;font-size:12px">
+        Строк:
+        <input type="number" id="bld-preview-rows" value="20" min="1" max="200"
+          style="width:54px;padding:5px 7px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:12px"/>
+      </label>
+      <button onclick="bldLoadPreview()" style="padding:7px 14px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:12px">👁 Показать</button>
+    </div>
+    <div id="bld-preview-data" style="overflow-x:auto"></div>`;
+}
+
+function bldPreviewSheet(name){
+  bldTab='preview';renderBldTabs();
+  refreshBldPreview().then(()=>{
+    setTimeout(()=>{
+      const sel=document.getElementById('bld-preview-sel');
+      if(sel){sel.value=name;bldLoadPreview();}
+    },200);
+  });
+}
+
+async function bldLoadPreview(){
+  const name=document.getElementById('bld-preview-sel')?.value;
+  const rows=document.getElementById('bld-preview-rows')?.value||20;
+  if(!name){toast('Выберите лист','err');return;}
+  const area=document.getElementById('bld-preview-data');
+  area.innerHTML='<div style="color:var(--t2);padding:8px">⏳ Загрузка…</div>';
+  try{
+    const raw=await api('getSheetData',{sheet_name:name,max_rows:rows});
+    const d=(raw&&raw.headers)?raw:(raw&&raw.data&&raw.data.headers?raw.data:{headers:[],rows:[],total:0,showing:0});
+    if(!d.headers.length){area.innerHTML='<div class="sm" style="padding:8px">Лист пустой или нет заголовков</div>';return;}
+    area.innerHTML=`<div class="sm" style="margin-bottom:6px">📊 ${esc(name)}: показано ${d.showing} из ${d.total} строк</div>
+      <div style="overflow-x:auto;max-height:55vh">
+        <table class="dpreview">
+          <thead><tr>${d.headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
+          <tbody>${(d.rows||[]).map(row=>`<tr>${row.map(v=>`<td title="${ea(String(v))}">${esc(String(v))}</td>`).join('')}</tr>`).join('')}</tbody>
+        </table>
+      </div>`;
+  }catch(e){area.innerHTML=`<div style="color:var(--red);padding:8px">Ошибка: ${esc(e.message)}</div>`;}
+}
+
+function getCatColorFE(catId){
+  const colors=['#4285f4','#0f9d58','#f4b400','#db4437','#ab47bc','#00bcd4','#ff7043','#607d8b'];
+  if(!catId)return'#9e9e9e';let h=0;for(const c of String(catId)){h=(Math.imul(31,h)+c.charCodeAt(0))|0;}return colors[Math.abs(h)%colors.length];
+}
+
+// ═══════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════
+init();
+</script>

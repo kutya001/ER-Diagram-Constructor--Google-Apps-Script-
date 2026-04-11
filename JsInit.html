@@ -1,0 +1,220 @@
+<script>
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+async function init(){
+  resize();
+  window.addEventListener('resize',()=>{resize();R();MR();});
+  // ResizeObserver: канвас реагирует на любое изменение размера canvas-wrap
+  // (сайдбар, правая панель, изменение окна — всё покрыто одним обсервером)
+  if(window.ResizeObserver){
+    new ResizeObserver(()=>{resize();R();MR();})
+      .observe(document.getElementById('canvas-wrap'));
+  }
+  setupCanvas();
+  setupTabs();
+  try{await loadAll();hideLoader();}
+  catch(e){toast('Ошибка: '+e.message,'err');hideLoader();}
+}
+
+async function loadAll(){
+  const rows=await apiAll(); // single round-trip
+  const [schemas,cats,asgs,ctypes,tables,columns,tpls,tcols]=rows.map(r=>r.ok?r.data:[]);
+  S.schemas=schemas||[]; S.cats=cats||[]; S.asgs=asgs||[]; S.ctypes=ctypes||[];
+  S.tables=tables||[]; S.columns=columns||[];
+  S.tpls=tpls||[]; S.tcols=tcols||[];
+  inv();
+  // FIX BUG 8: загрузить имена листов для статус-точек GSheet
+  try{
+    const sheets=await api('listSheets');
+    sbSheetNames=new Set(sheets.map(s=>s.name));
+  }catch(e){/* не критично */}
+  renderSchemaSel(); renderTree(); renderSbRight(); R(); MR();
+}
+function hideLoader(){document.getElementById('loader').style.display='none';}
+
+// ═══════════════════════════════════════════════════════════
+// SCHEMA SELECT / TREE
+// ═══════════════════════════════════════════════════════════
+function renderSchemaSel(){
+  const el=document.getElementById('schema-sel');
+  const cur=S.schema?.id;
+  el.innerHTML='<option value="">— Схема —</option>'+
+    S.schemas.map(s=>`<option value="${s.id}"${String(s.id)===String(cur)?' selected':''}>${esc(s.name)}${s.copied_from?' ↳':''}</option>`).join('');
+}
+document.getElementById('schema-sel').addEventListener('change',function(){selSchema(this.value);});
+
+function selSchema(id){
+  S.schema=id?S.schemas.find(s=>String(s.id)===String(id)):null;
+  S.table=null;
+  const has=!!S.schema;
+  document.getElementById('schema-sel').value=id||'';
+  ['btn-cps','btn-ds','btn-at','btn-al','btn-builder','btn-rels','btn-export-ss'].forEach(b=>document.getElementById(b).disabled=!has);
+  renderTree(); renderSbRight(); R(); MR(); renderPanel();
+}
+
+// collapsed schema IDs set
+const schCollapsed = new Set();
+let sctxSchemaId = null;
+
+function renderTree(){
+  const tree=document.getElementById('schema-tree');
+  const f=document.createDocumentFragment();
+  const done=new Set();
+
+  function node(s,depth){
+    if(done.has(s.id))return; done.add(s.id);
+    const children=S.schemas.filter(c=>String(c.copied_from)===String(s.id));
+    const isActive=S.schema&&String(s.id)===String(S.schema.id);
+    const cnt=S.tables.filter(t=>String(t.schema_id)===String(s.id)).length;
+    const isCopy=!!s.copied_from;
+
+    const div=document.createElement('div');
+    div.className='tnode'+(depth?' child':'')+(isActive?' active':'');
+    div.dataset.id=s.id;
+    div.style.paddingLeft=(7+depth*14)+'px';
+
+    div.innerHTML=`
+      <span class="tnode-label" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        ${isCopy?'↳ ':'📁 '}${esc(s.name)}
+      </span>
+      <span class="tbadge">${cnt}</span>
+      ${isCopy?`<button class="detach" onclick="detachSchema(event,${s.id})" title="Отвязать от родителя">↩</button>`:''}`;
+
+    div.addEventListener('click',e=>{
+      if(e.target.classList.contains('detach'))return;
+      selSchema(s.id);
+    });
+    div.addEventListener('contextmenu',e=>{
+      e.preventDefault(); e.stopPropagation();
+      schCtxShow(e.clientX,e.clientY,s);
+    });
+    f.appendChild(div);
+    // Always show children (no collapse)
+    children.forEach(c=>node(c,depth+1));
+  }
+
+  S.schemas.filter(s=>!s.copied_from).forEach(s=>node(s,0));
+  S.schemas.filter(s=>s.copied_from&&!done.has(s.id)).forEach(s=>node(s,1));
+  tree.innerHTML=''; tree.appendChild(f);
+}
+
+// Right sidebar: tables of current schema grouped by category
+let sbSheetNames=new Set();
+const sbCatCollapsed=new Set(); // collapsed category ids
+
+function renderSbRight(){
+  const hdr=document.getElementById('sb-right-hdr');
+  const list=document.getElementById('sb-tbl-list');
+  if(!S.schema){hdr.textContent='— таблицы —';hdr.style.color='var(--t2)';list.innerHTML='';return;}
+  hdr.innerHTML=`<span>${esc(S.schema.name)}</span><span class="tbadge" style="margin-left:4px">${schTables().length}</span>`;
+  hdr.style.color='var(--text)';
+  const ts=schTables();
+  if(!ts.length){list.innerHTML='<div class="sm" style="padding:8px 10px">Нет таблиц</div>';return;}
+
+  // Group by category
+  const byCat={};
+  ts.forEach(t=>{
+    const cid=String(t.category_id||'__none__');
+    if(!byCat[cid])byCat[cid]=[];
+    byCat[cid].push(t);
+  });
+
+  const frag=document.createDocumentFragment();
+  Object.entries(byCat).forEach(([cid,tables])=>{
+    const cat=S.cats.find(c=>String(c.id)===cid);
+    const cc=getCatColorFE(cid==='__none__'?null:cid);
+    const isColl=sbCatCollapsed.has(cid);
+
+    // Category header (clickable to collapse)
+    const grp=document.createElement('div');
+    grp.className='sb-cat-group';
+
+    const hdrEl=document.createElement('div');
+    hdrEl.className='sb-cat-hdr';
+    hdrEl.style.cursor='pointer';
+    hdrEl.innerHTML=`
+      <span style="width:8px;height:8px;border-radius:50%;background:${cc};flex-shrink:0"></span>
+      <span style="flex:1">${esc(cat?cat.name:'Без категории')}</span>
+      <span style="font-size:10px;color:var(--t2)">${tables.length}</span>
+      <span style="font-size:10px;color:var(--t2);margin-left:4px;transition:transform .15s;display:inline-block;transform:rotate(${isColl?'-90':'0'}deg)">▾</span>`;
+    hdrEl.addEventListener('click',()=>{
+      isColl?sbCatCollapsed.delete(cid):sbCatCollapsed.add(cid);
+      renderSbRight();
+    });
+    grp.appendChild(hdrEl);
+
+    if(!isColl){
+      tables.forEach(t=>{
+        const exists=sbSheetNames.has(t.name);
+        const isSel=S.table&&String(S.table.id)===String(t.id);
+        const item=document.createElement('div');
+        item.className='sb-tbl-item'+(isSel?' active':'');
+        item.dataset.tid=t.id;
+        item.innerHTML=`
+          <span class="sb-gs-dot ${exists?'exists':'missing'}" title="${exists?'Лист создан':'Лист не создан'}"></span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.name)}</span>
+          <span style="font-size:10px;color:var(--t2)">${gc(t.id).length}</span>`;
+        item.addEventListener('click',()=>selectTableFromSb(t.id));
+        item.addEventListener('contextmenu',e=>{
+          e.preventDefault(); e.stopPropagation();
+          S.table=t; R(); renderPanel();
+          ctxShow(e.clientX,e.clientY,t);
+        });
+        grp.appendChild(item);
+      });
+    }
+    frag.appendChild(grp);
+  });
+  list.innerHTML='';
+  list.appendChild(frag);
+}
+
+function selectTableFromSb(tid){
+  const t=S.tables.find(t=>String(t.id)===String(tid));
+  if(!t)return;
+  S.table=t;
+  // scroll canvas to table
+  const tx=t.pos_x||100,ty=t.pos_y||100;
+  ox=cv.width/2-tx*sc; oy=cv.height/2-ty*sc;
+  R();MR();renderPanel();renderSbRight();
+}
+
+// ── Schema context menu ───────────────────────────────────────
+function schCtxShow(x,y,s){
+  sctxSchemaId=String(s.id);
+  const m=document.getElementById('schema-ctx');
+  document.getElementById('sctx-copy').style.opacity=s.copied_from?'0.4':'1';
+  document.getElementById('sctx-copy').title=s.copied_from?'Нельзя копировать уже скопированную схему':'Копировать схему';
+  m.style.display='block';
+  m.style.left=Math.min(x,window.innerWidth-190)+'px';
+  m.style.top=Math.min(y,window.innerHeight-140)+'px';
+  document.getElementById('sctx-rename').onclick=()=>{schCtxHide();const sc2=S.schemas.find(sc=>String(sc.id)===sctxSchemaId);if(sc2){selSchema(sc2.id);openEditSchema();}};
+  document.getElementById('sctx-copy').onclick=()=>{
+    schCtxHide();
+    const sc2=S.schemas.find(sc=>String(sc.id)===sctxSchemaId);
+    if(!sc2)return;
+    if(sc2.copied_from){toast('Нельзя копировать уже скопированную схему','err');return;}
+    selSchema(sc2.id);copySchema();
+  };
+  document.getElementById('sctx-del').onclick=()=>{
+    schCtxHide();
+    const sc2=S.schemas.find(sc=>String(sc.id)===sctxSchemaId);
+    if(!sc2)return;
+    const prev=S.schema;selSchema(sc2.id);
+    deleteSchema(()=>{if(prev&&String(prev.id)!==sctxSchemaId)selSchema(prev.id);});
+  };
+}
+function schCtxHide(){document.getElementById('schema-ctx').style.display='none';}
+document.addEventListener('click',()=>schCtxHide());
+
+async function detachSchema(e,id){
+  e.stopPropagation();
+  if(!confirm('Сделать схему независимой?'))return;
+  await api('detachSchema',{id});
+  const s=S.schemas.find(s=>String(s.id)===String(id));
+  if(s)s.copied_from='';
+  toast('Схема отвязана','ok');
+  renderSchemaSel(); renderTree();
+}
+</script>

@@ -1,0 +1,108 @@
+<script>// ═══════════════════════════════════════════════════════════
+// EXPORT TO NEW SPREADSHEET
+// ═══════════════════════════════════════════════════════════
+function openExportSS(){
+  if(!S.schema){toast('Выберите схему','err');return;}
+  // Reset modal state
+  document.getElementById('ess-progress').style.display='none';
+  document.getElementById('ess-result').style.display='none';
+  document.getElementById('ess-footer').style.display='flex';
+  document.getElementById('ess-btn-go').disabled=false;
+  document.getElementById('ess-title').value=S.schema.name||'';
+  document.getElementById('ess-folder').value='';
+  document.getElementById('ess-examples').checked=false;
+  document.getElementById('ess-rows').value='3';
+  // Render preview
+  _essRenderPreview();
+  showM('m-export-ss');
+}
+
+function _essRenderPreview(){
+  const ts=schTables();
+  const body=document.getElementById('ess-preview-body');
+  if(!ts.length){body.innerHTML='<div style="color:var(--t2)">В схеме нет таблиц</div>';return;}
+
+  // Count stats
+  const totalCols=ts.reduce((s,t)=>s+gc(t.id).length,0);
+  const totalRels=S.columns.filter(c=>isFK(c)&&c.fk_table_id&&ts.some(t=>String(t.id)===String(c.table_id))).length;
+
+  let html=`
+    <div style="display:flex;gap:16px;margin-bottom:8px;flex-wrap:wrap">
+      <span style="color:var(--accent)">📊 ${ts.length} таблиц</span>
+      <span style="color:var(--t2)">📋 ${totalCols} колонок</span>
+      <span style="color:var(--fk)">🔗 ${totalRels} связей</span>
+    </div>
+    <div style="color:var(--t2);font-size:10px;margin-bottom:5px">Листы в новой книге:</div>
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <div style="color:var(--accent)">📋 README — описание схемы</div>`;
+
+  // Group by category for sorted preview
+  const bycat={};
+  ts.forEach(t=>{
+    const cat=S.cats.find(c=>String(c.id)===String(t.category_id));
+    const key=cat?cat.name:'Без категории';
+    if(!bycat[key])bycat[key]=[];
+    bycat[key].push(t);
+  });
+  Object.entries(bycat).forEach(([catName,tables])=>{
+    html+=`<div style="color:var(--t2);margin-top:4px;font-size:10px;text-transform:uppercase;letter-spacing:.4px">${esc(catName)}</div>`;
+    tables.forEach(t=>{
+      const cc=gc(t.id).length;
+      html+=`<div style="padding-left:8px">📄 ${esc(t.name)} <span style="color:var(--t2)">(${cc} кол.)</span></div>`;
+    });
+  });
+  if(totalRels>0) html+=`<div style="color:var(--red-soft,#e57373);margin-top:4px">🔗 Связи — список всех FK</div>`;
+  html+='</div>';
+  body.innerHTML=html;
+}
+
+async function doExportSS(){
+  if(!S.schema)return;
+  const title=document.getElementById('ess-title').value.trim();
+  const folder=document.getElementById('ess-folder').value.trim();
+  const withEx=document.getElementById('ess-examples').checked;
+  const rows=parseInt(document.getElementById('ess-rows').value)||3;
+
+  // Show progress
+  document.getElementById('ess-preview').style.display='none';
+  document.getElementById('ess-progress').style.display='block';
+  document.getElementById('ess-footer').style.display='none';
+
+  try{
+    const result=await api('exportToNewSpreadsheet',{
+      schema_id: S.schema.id,
+      title:     title||S.schema.name,
+      folder_name: folder||null,
+      with_examples: withEx,
+      example_rows:  rows,
+    });
+
+    document.getElementById('ess-progress').style.display='none';
+    document.getElementById('ess-result').style.display='block';
+
+    const folderInfo=result.folder_url
+      ?`<div style="margin-top:4px">📁 Папка: <a href="${result.folder_url}" target="_blank" style="color:var(--accent)">${esc(folder)}</a></div>`
+      :'';
+
+    document.getElementById('ess-result-body').innerHTML=`
+      <div style="margin-bottom:6px">📊 <strong>${esc(result.title)}</strong></div>
+      <div style="color:var(--t2);margin-bottom:8px">${result.tables_count} таблиц создано</div>
+      ${folderInfo}
+      <a href="${result.url}" target="_blank"
+        style="display:inline-block;margin-top:10px;padding:8px 18px;background:var(--accent);color:#fff;border-radius:6px;font-weight:700;font-size:13px;text-decoration:none">
+        🔗 Открыть таблицу
+      </a>`;
+
+    // Show only close button
+    document.getElementById('ess-footer').style.display='flex';
+    document.getElementById('ess-btn-go').style.display='none';
+    document.querySelector('#m-export-ss .cancel').textContent='Закрыть';
+
+  }catch(e){
+    document.getElementById('ess-progress').style.display='none';
+    document.getElementById('ess-preview').style.display='block';
+    document.getElementById('ess-footer').style.display='flex';
+    document.getElementById('ess-btn-go').disabled=false;
+    toast('Ошибка: '+e.message,'err');
+  }
+}</script>

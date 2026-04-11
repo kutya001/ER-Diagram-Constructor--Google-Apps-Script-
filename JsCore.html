@@ -1,0 +1,221 @@
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════════
+// THEME
+// ═══════════════════════════════════════════════════════════
+const TC = {
+  dark:  {tb:'#252836',th:'#2d3147',tbr:'#3d4266',ts:'#5b8dee',ht:'#e8eaf6',ct:'#c8cce8',ch:'#353a55',pk:'#f1c40f',fk:'#e67e22',li:'#5b8dee',lh:'#7c5cbf',cb:'#3d4266',gr:'rgba(255,255,255,.03)',bg:'#1a1d27',t2:'#9da5c9',s3:'#353a55'},
+  light: {tb:'#fff',  th:'#eef1fb',tbr:'#c8cfe8',ts:'#3b73d4',ht:'#1a1d2e',ct:'#2c3060',ch:'#f0f2ff',pk:'#b8920a',fk:'#c05c00',li:'#3b73d4',lh:'#6b4ab5',cb:'#d0d5e8',gr:'rgba(0,0,0,.04)',bg:'#eef0f8',t2:'#5a6080',s3:'#e8ebf5'},
+  warm:  {tb:'#2a2118',th:'#332819',tbr:'#5a4530',ts:'#e8944a',ht:'#f0e8d8',ct:'#e0d0b8',ch:'#3d3020',pk:'#f5c842',fk:'#e07830',li:'#e8944a',lh:'#c45e2a',cb:'#5a4530',gr:'rgba(255,220,160,.04)',bg:'#1a1308',t2:'#a89070',s3:'#3d3020'},
+};
+let curTheme = localStorage.getItem('er_theme')||'dark';
+let C = {...TC[curTheme]};
+
+function setTheme(t) {
+  curTheme=t; C={...TC[t]};
+  document.body.dataset.theme=t;
+  localStorage.setItem('er_theme',t);
+  document.querySelectorAll('.tdot').forEach(d=>d.classList.toggle('on',d.dataset.t===t));
+  R(); MR();
+}
+document.body.dataset.theme=curTheme;
+document.querySelectorAll('.tdot').forEach(d=>d.classList.toggle('on',d.dataset.t===curTheme));
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+const S = {
+  schemas:[],tables:[],columns:[],cats:[],asgs:[],ctypes:[],
+  tpls:[],tcols:[],
+  schema:null,table:null,tab:'props',
+};
+
+// ═══════════════════════════════════════════════════════════
+// SYNC ENGINE  — smart queue, debounced, visual status + progress bar
+// ═══════════════════════════════════════════════════════════
+const SQ = [];        // sync queue [{action, payload, resolve, reject}]
+let syncRunning=false,syncErrCount=0;
+let syncTO=null;
+let syncProgressTO=null;
+let _syncAnim=null;
+
+function queueSync(action, payload){
+  return new Promise((resolve,reject)=>{
+    SQ.push({action,payload,resolve,reject});
+    setSyncState('pending');
+    clearTimeout(syncTO);
+    syncTO=setTimeout(flushSync, 400);
+  });
+}
+
+async function flushSync(){
+  if(syncRunning||!SQ.length){return;}
+  syncRunning=true;setSyncState('syncing');
+  const batch=[...SQ]; SQ.length=0;
+  try{
+    const reqs=batch.map(b=>({action:b.action,payload:b.payload}));
+    await new Promise((res,rej)=>{
+      google.script.run
+        .withSuccessHandler(r=>r.ok?res(r.data):rej(new Error(r.error)))
+        .withFailureHandler(e=>rej(new Error(e.message||String(e))))
+        .processBatch(reqs);
+    });
+    batch.forEach(b=>b.resolve&&b.resolve());
+    syncErrCount=0;setSyncState('synced');
+  }catch(e){
+    syncErrCount++;setSyncState('error');
+    batch.forEach(b=>SQ.push(b));
+    if(syncErrCount<3){syncTO=setTimeout(flushSync,2000);}
+    else{
+      // Сохранить несохранённые действия в localStorage для восстановления
+      try{
+        const failed = batch.map(b=>({action:b.action,payload:b.payload}));
+        localStorage.setItem('er_failed_sync',JSON.stringify(failed));
+      }catch(e2){}
+      batch.forEach(b=>b.reject&&b.reject(e));
+      toast('Ошибка синхронизации — данные сохранены локально','err');
+    }
+  }finally{syncRunning=false;}
+  if(SQ.length)flushSync();
+}
+
+async function syncNow(){
+  clearTimeout(syncTO);
+  await flushSync();
+  if(!SQ.length)toast('Синхронизировано','ok');
+}
+
+/** Повторить сохранение локальных действий, которые не удалось отправить */
+async function retryFailedSync(){
+  const raw = localStorage.getItem('er_failed_sync');
+  if(!raw){toast('Нет несохранённых данных','inf');return;}
+  let failed;
+  try{failed=JSON.parse(raw);}catch(e){toast('Ошибка чтения локальных данных','err');return;}
+  toast('Повторная отправка '+failed.length+' действий…','inf');
+  syncErrCount=0;
+  try{
+    const reqs=failed.map(b=>({action:b.action,payload:b.payload}));
+    await new Promise((res,rej)=>{
+      google.script.run
+        .withSuccessHandler(r=>r.ok?res(r.data):rej(new Error(r.error)))
+        .withFailureHandler(e=>rej(new Error(e.message||String(e))))
+        .processBatch(reqs);
+    });
+    localStorage.removeItem('er_failed_sync');
+    toast('Данные успешно синхронизированы','ok');
+  }catch(e){
+    toast('Повторная ошибка: '+e.message,'err');
+  }
+}
+
+function setSyncState(s){
+  const badge  = document.getElementById('sync-badge');
+  const icon   = document.getElementById('sync-icon');
+  const txt    = document.getElementById('sync-txt');
+  const barWrap= document.getElementById('sync-bar-wrap');
+  const bar    = document.getElementById('sync-bar');
+  const topBar = document.getElementById('sync-progress');
+  if(!badge) return;
+  badge.className = s;
+  clearTimeout(syncProgressTO);
+  if(_syncAnim) clearTimeout(_syncAnim);
+
+  // Show bar only while active
+  const active = s==='pending'||s==='syncing';
+  if(barWrap) barWrap.style.display = active ? '' : 'none';
+
+  if(s === 'pending'){
+    icon.innerHTML = '<span class="sync-dot-anim"><span></span><span></span><span></span></span>';
+    txt.textContent = 'Ожидание…'; txt.style.color = 'var(--orange)';
+    if(bar){ bar.style.transition='none'; bar.style.width='0%'; bar.style.opacity='1'; bar.style.background='var(--orange)';
+      requestAnimationFrame(()=>{bar.style.transition='width .4s ease'; bar.style.width='25%';}); }
+    if(topBar){ topBar.style.opacity='1'; topBar.style.width='25%'; topBar.style.transition='width .4s ease'; }
+
+  } else if(s === 'syncing'){
+    icon.innerHTML = '<span class="sync-spin" style="display:inline-block;font-size:14px;line-height:1">↻</span>';
+    txt.textContent = 'Синхронизация…'; txt.style.color = 'var(--accent)';
+    if(bar){ bar.style.transition='width 1.5s ease'; bar.style.opacity='1'; bar.style.background='var(--accent)';
+      requestAnimationFrame(()=>{ bar.style.width='75%'; }); }
+    if(topBar){ topBar.style.opacity='1'; topBar.style.transition='width 1.5s ease';
+      requestAnimationFrame(()=>{ topBar.style.width='75%'; }); }
+    _syncAnim = setTimeout(()=>{
+      if(bar) bar.style.width='90%';
+      if(topBar) topBar.style.width='90%';
+    }, 1500);
+
+  } else if(s === 'synced'){
+    icon.innerHTML = '<span style="color:var(--green);font-size:13px">✓</span>';
+    txt.textContent = 'Синхронизировано'; txt.style.color = 'var(--t2)';
+    // Flash green to 100% then hide
+    if(bar){ bar.style.transition='width .2s ease'; bar.style.width='100%'; bar.style.background='var(--green)'; }
+    if(topBar){ topBar.style.transition='width .2s ease'; topBar.style.width='100%'; }
+    syncProgressTO = setTimeout(()=>{
+      if(barWrap) barWrap.style.display='none';
+      if(bar){ bar.style.transition='none'; bar.style.width='0%'; }
+      if(topBar){ topBar.style.transition='opacity .4s'; topBar.style.opacity='0';
+        setTimeout(()=>{ topBar.style.width='0%'; topBar.style.transition='none'; }, 420); }
+    }, 700);
+
+  } else { // error
+    icon.innerHTML = '<span style="color:var(--red)">✗</span>';
+    txt.textContent = 'Ошибка синхр.'; txt.style.color = 'var(--red)';
+    if(bar){ bar.style.transition='width .3s'; bar.style.width='100%'; bar.style.background='var(--red)'; }
+    if(topBar){ topBar.style.transition='opacity .3s'; topBar.style.opacity='0'; }
+    syncProgressTO = setTimeout(()=>{
+      if(barWrap) barWrap.style.display='none';
+      if(bar){ bar.style.transition='none'; bar.style.width='0%'; }
+    }, 1500);
+  }
+}
+
+// Column cache – invalidated on mutation
+const CC = new Map();
+function gc(tid){
+  const k=String(tid);
+  if(!CC.has(k)) CC.set(k,S.columns.filter(c=>String(c.table_id)===k).sort((a,b)=>+a.position-+b.position));
+  return CC.get(k);
+}
+function inv(tid){tid?CC.delete(String(tid)):CC.clear();}
+
+// ═══════════════════════════════════════════════════════════
+// CANVAS
+// ═══════════════════════════════════════════════════════════
+const cv  = document.getElementById('canvas');
+const ctx = cv.getContext('2d',{alpha:false});
+const mc  = document.getElementById('mini-canvas');
+const mctx= mc.getContext('2d',{alpha:false});
+const TW=220,TH=38,CH=28;
+
+let sc=1,ox=80,oy=80;
+let pan=false,panS=null;
+let drag=false,dragT=null,dragO={x:0,y:0};
+let relDraw=false,relSrc=null,relPos=null;
+let pending={},hovT=null,hovC=null;
+
+// RAF flags
+let rAF=false,mrAF=false;
+function R(){if(rAF)return;rAF=true;requestAnimationFrame(()=>{rAF=false;render();});}
+function MR(){if(mrAF)return;mrAF=true;requestAnimationFrame(()=>{mrAF=false;miniRender();});}
+
+// ═══════════════════════════════════════════════════════════
+// API
+// ═══════════════════════════════════════════════════════════
+const api=(action,p={})=>new Promise((res,rej)=>{
+  google.script.run
+    .withSuccessHandler(r=>r.ok?res(r.data):rej(new Error(r.error)))
+    .withFailureHandler(e=>rej(new Error(e.message||String(e))))
+    .processRequest(action,p);
+});
+const apiBatch=reqs=>new Promise((res,rej)=>{
+  google.script.run
+    .withSuccessHandler(r=>r.ok?res(r.data):rej(new Error(r.error)))
+    .withFailureHandler(e=>rej(new Error(e.message||String(e))))
+    .processBatch(reqs);
+});
+const apiAll=()=>new Promise((res,rej)=>{
+  google.script.run
+    .withSuccessHandler(r=>r.ok?res(r.data):rej(new Error(r.error)))
+    .withFailureHandler(e=>rej(new Error(e.message||String(e))))
+    .loadAllData();
+});
+</script>

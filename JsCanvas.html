@@ -1,0 +1,401 @@
+<script>
+// ═══════════════════════════════════════════════════════════
+// CANVAS HELPERS
+// ═══════════════════════════════════════════════════════════
+function RR(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();}
+function RRt(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h);ctx.lineTo(x,y+h);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();}
+
+// ═══════════════════════════════════════════════════════════
+// CANVAS RESIZE
+// ═══════════════════════════════════════════════════════════
+function resize(){
+  const w=document.getElementById('canvas-wrap');
+  cv.width=w.clientWidth; cv.height=w.clientHeight;
+  mc.width=150; mc.height=95;
+}
+function w2s(wx,wy){return{x:wx*sc+ox,y:wy*sc+oy};}
+function s2w(sx,sy){return{x:(sx-ox)/sc,y:(sy-oy)/sc};}
+
+// ═══════════════════════════════════════════════════════════
+// CANVAS EVENTS  (throttled via RAF)
+// ═══════════════════════════════════════════════════════════
+// Relation state
+let hovRel=null; // {col} hovered relation
+let selRel=null; // {col} selected relation (clicked)
+
+function setupCanvas(){
+  cv.addEventListener('mousedown',onDown,{passive:false});
+  cv.addEventListener('mousemove',raf(onMove));
+  cv.addEventListener('mouseup',  onUp);
+  cv.addEventListener('wheel',    raf(onWheel),{passive:false});
+  cv.addEventListener('contextmenu',onCtx);
+  cv.addEventListener('dblclick', onDbl);
+  document.addEventListener('mouseup',onGlobalUp);
+  document.addEventListener('click',()=>ctxHide());
+}
+function raf(fn){
+  let pend=false,last=null;
+  return function(e){last=e;if(pend)return;pend=true;requestAnimationFrame(()=>{pend=false;fn.call(this,last);});};
+}
+
+function cvPos(e){const r=cv.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}
+
+function onDown(e){
+  const p=cvPos(e),wp=s2w(p.x,p.y);
+  const fk=hitFK(wp);
+  if(fk){relDraw=true;relSrc=fk;cv.style.cursor='crosshair';return;}
+  const hit=hitTable(wp);
+  if(hit){
+    selRel=null;
+    S.table=hit; drag=true; dragT=hit;
+    dragO={x:wp.x-(hit.pos_x||100),y:wp.y-(hit.pos_y||100)};
+    cv.style.cursor='grabbing'; R(); renderPanel(); e.stopPropagation();
+    return;
+  }
+  // Check relation click
+  const hr=hitRel(wp);
+  if(hr){
+    selRel=hr; S.table=null;
+    R(); renderPanel();
+    showRelPopup(hr, e.clientX, e.clientY);
+    return;
+  }
+  selRel=null;
+  hideRelPopup();
+  pan=true; panS={x:e.clientX-ox,y:e.clientY-oy};
+  S.table=null; cv.style.cursor='grabbing'; R(); renderPanel();
+}
+function onMove(e){
+  const p=cvPos(e),wp=s2w(p.x,p.y);
+  if(relDraw){relPos=p;R();return;}
+  if(drag&&dragT){dragT.pos_x=wp.x-dragO.x;dragT.pos_y=wp.y-dragO.y;pending[dragT.id]=true;R();MR();return;}
+  if(pan){ox=e.clientX-panS.x;oy=e.clientY-panS.y;R();MR();return;}
+  // hover
+  const ph=hovT,pc=hovC,pr=hovRel; hovT=null;hovC=null;hovRel=null;
+  const fk=hitFK(wp);
+  if(fk){cv.style.cursor='crosshair';hovT=fk.tableId;hovC=fk.columnId;}
+  else{
+    const hit=hitTable(wp);
+    if(hit){cv.style.cursor='grab';hovT=hit.id;}
+    else{
+      const hr=hitRel(wp);
+      if(hr){cv.style.cursor='pointer';hovRel=hr;}
+      else cv.style.cursor='default';
+    }
+  }
+  if(ph!==hovT||pc!==hovC||pr!==hovRel)R();
+}
+function onUp(e){
+  if(relDraw&&relSrc){
+    const p=cvPos(e),wp=s2w(p.x,p.y);
+    const pk=hitPK(wp,relSrc.tableId);
+    if(pk)createRel(relSrc,pk);
+    relDraw=false;relSrc=null;relPos=null;cv.style.cursor='default';R();return;
+  }
+  if(drag){drag=false;cv.style.cursor='default';savePending();}
+  pan=false;cv.style.cursor='default';
+}
+function onGlobalUp(){
+  if(relDraw){relDraw=false;relSrc=null;relPos=null;cv.style.cursor='default';R();}
+  pan=false;drag=false;
+}
+function onWheel(e){
+  e.preventDefault();
+  const p=cvPos(e),d=e.deltaY>0?.9:1.1;
+  const ns=Math.min(3,Math.max(.2,sc*d));
+  ox=p.x-(p.x-ox)*(ns/sc); oy=p.y-(p.y-oy)*(ns/sc); sc=ns;
+  document.getElementById('zoom-lbl').textContent=Math.round(sc*100)+'%';
+  R();MR();
+}
+function onCtx(e){
+  e.preventDefault();
+  hideRelPopup();
+  const wp=s2w(...Object.values(cvPos(e)));
+  const hit=hitTable(wp);
+  if(hit){S.table=hit;R();renderPanel();ctxShow(e.clientX,e.clientY,hit);}
+}
+function onDbl(e){const hit=hitTable(s2w(...Object.values(cvPos(e))));if(hit)openEditTable(hit);}
+
+// ═══════════════════════════════════════════════════════════
+// HIT TESTS
+// ═══════════════════════════════════════════════════════════
+function schTables(){if(!S.schema)return[];const id=String(S.schema.id);return S.tables.filter(t=>String(t.schema_id)===id);}
+
+function hitTable(wp){
+  const ts=schTables();
+  for(let i=ts.length-1;i>=0;i--){
+    const t=ts[i],x=t.pos_x||100,y=t.pos_y||100;
+    const h=TH+gc(t.id).length*CH+8;
+    if(wp.x>=x&&wp.x<=x+TW&&wp.y>=y&&wp.y<=y+h)return t;
+  }return null;
+}
+function hitFK(wp){
+  for(const t of schTables()){
+    const cols=gc(t.id);
+    for(let i=0;i<cols.length;i++){
+      const c=cols[i];
+      // Strictly: only FK-typed columns can start a relation
+      if(!isFK(c))continue;
+      const cx=(t.pos_x||100)+TW-8,cy=(t.pos_y||100)+TH+i*CH+CH/2;
+      if(Math.hypot(wp.x-cx,wp.y-cy)<8)return{tableId:t.id,columnId:c.id,idx:i};
+    }
+  }return null;
+}
+function hitPK(wp,excl){
+  for(const t of schTables()){
+    if(String(t.id)===String(excl))continue;
+    const cols=gc(t.id);
+    for(let i=0;i<cols.length;i++){
+      const c=cols[i];if(!isPK(c))continue;
+      const cy=(t.pos_y||100)+TH+i*CH;
+      if(wp.x>=(t.pos_x||100)&&wp.x<=(t.pos_x||100)+TW&&wp.y>=cy&&wp.y<=cy+CH)return{tableId:t.id,columnId:c.id};
+    }
+  }return null;
+}
+function isPK(c){return isTrue(c.is_pk);}
+function isFK(c){return isTrue(c.is_fk);}
+
+// ═══════════════════════════════════════════════════════════
+// RENDER  (main canvas, RAF-driven, no double-frames)
+// ═══════════════════════════════════════════════════════════
+function render(){
+  ctx.fillStyle=C.bg; ctx.fillRect(0,0,cv.width,cv.height);
+  drawGrid();
+  if(!S.schema){drawEmpty();return;}
+  drawRels(); schTables().forEach(t=>drawTable(t));
+  if(relDraw&&relSrc&&relPos)drawRelDraft();
+}
+
+function drawGrid(){
+  const g=40*sc,rx=((ox%g)+g)%g,ry=((oy%g)+g)%g;
+  ctx.strokeStyle=C.gr; ctx.lineWidth=1; ctx.beginPath();
+  for(let x=rx;x<cv.width;x+=g){ctx.moveTo(x,0);ctx.lineTo(x,cv.height);}
+  for(let y=ry;y<cv.height;y+=g){ctx.moveTo(0,y);ctx.lineTo(cv.width,y);}
+  ctx.stroke();
+}
+function drawEmpty(){ctx.fillStyle='rgba(128,128,128,.18)';ctx.font='15px Segoe UI';ctx.textAlign='center';ctx.fillText('Выберите или создайте схему БД',cv.width/2,cv.height/2);ctx.textAlign='left';}
+
+function drawRelDraft(){
+  const st=S.tables.find(t=>String(t.id)===String(relSrc.tableId));if(!st)return;
+  const cols=gc(st.id),i=cols.findIndex(c=>String(c.id)===String(relSrc.columnId));
+  const sp=w2s((st.pos_x||100)+TW,(st.pos_y||100)+TH+i*CH+CH/2);
+  ctx.save();ctx.strokeStyle=C.lh;ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
+  ctx.beginPath();ctx.moveTo(sp.x,sp.y);ctx.lineTo(relPos.x,relPos.y);ctx.stroke();
+  ctx.setLineDash([]);ctx.restore();
+}
+
+function drawRels(){
+  const ts=schTables(),ids=new Set(ts.map(t=>String(t.id)));
+  S.columns.filter(c=>isFK(c)&&c.fk_table_id&&ids.has(String(c.table_id))).forEach(col=>{
+    const st=ts.find(t=>String(t.id)===String(col.table_id));
+    const tt=ts.find(t=>String(t.id)===String(col.fk_table_id));
+    if(!st||!tt)return;
+    const sc2=gc(st.id),tc=gc(tt.id);
+    const si=sc2.findIndex(c=>String(c.id)===String(col.id));
+    const ti=tc.findIndex(c=>String(c.id)===String(col.fk_column_id));
+    const sx=(st.pos_x||100)+TW,sy=(st.pos_y||100)+TH+si*CH+CH/2;
+    const tx=(tt.pos_x||100),   ty=(tt.pos_y||100)+TH+Math.max(0,ti)*CH+CH/2;
+    const sp=w2s(sx,sy),tp2=w2s(tx,ty);
+    const dx=Math.abs(tp2.x-sp.x)*.5;
+
+    const isHov=hovRel&&String(hovRel.id)===String(col.id);
+    const isSel=selRel&&String(selRel.id)===String(col.id);
+    const lineW=isSel?3:isHov?2.5:1.5;
+    const lineCol=isSel?C.lh:isHov?C.lh:C.li;
+
+    ctx.save();
+    if(isSel){ctx.shadowColor=C.lh;ctx.shadowBlur=8;}
+    ctx.strokeStyle=lineCol;ctx.lineWidth=lineW;
+    ctx.beginPath();ctx.moveTo(sp.x,sp.y);ctx.bezierCurveTo(sp.x+dx,sp.y,tp2.x-dx,tp2.y,tp2.x,tp2.y);ctx.stroke();
+    ctx.shadowBlur=0;
+    const a=Math.atan2(tp2.y-sp.y,tp2.x-sp.x);
+    ctx.fillStyle=lineCol;ctx.beginPath();ctx.moveTo(tp2.x,tp2.y);ctx.lineTo(tp2.x-7*Math.cos(a-.4),tp2.y-7*Math.sin(a-.4));ctx.lineTo(tp2.x-7*Math.cos(a+.4),tp2.y-7*Math.sin(a+.4));ctx.closePath();ctx.fill();
+    ctx.strokeStyle=C.fk;ctx.lineWidth=lineW;ctx.beginPath();ctx.moveTo(sp.x+9*Math.cos(a+.35),sp.y+9*Math.sin(a+.35));ctx.lineTo(sp.x,sp.y);ctx.lineTo(sp.x+9*Math.cos(a-.35),sp.y+9*Math.sin(a-.35));ctx.stroke();
+    ctx.restore();
+  });
+}
+
+// Hit test: is world point wp near a relation bezier curve?
+function hitRel(wp){
+  const ts=schTables(),ids=new Set(ts.map(t=>String(t.id)));
+  const THRESH=8/sc; // hit distance in world coords
+  const fkCols=S.columns.filter(c=>isFK(c)&&c.fk_table_id&&ids.has(String(c.table_id)));
+  for(const col of fkCols){
+    const st=ts.find(t=>String(t.id)===String(col.table_id));
+    const tt=ts.find(t=>String(t.id)===String(col.fk_table_id));
+    if(!st||!tt)continue;
+    const sc2=gc(st.id),tc=gc(tt.id);
+    const si=sc2.findIndex(c=>String(c.id)===String(col.id));
+    const ti=tc.findIndex(c=>String(c.id)===String(col.fk_column_id));
+    const sx=(st.pos_x||100)+TW,sy=(st.pos_y||100)+TH+si*CH+CH/2;
+    const tx=(tt.pos_x||100),   ty=(tt.pos_y||100)+TH+Math.max(0,ti)*CH+CH/2;
+    const dx=Math.abs(tx-sx)*.5;
+    // Sample bezier at N points
+    for(let t2=0;t2<=1;t2+=0.05){
+      const bx=Math.pow(1-t2,3)*sx+3*Math.pow(1-t2,2)*t2*(sx+dx)+3*(1-t2)*t2*t2*(tx-dx)+Math.pow(t2,3)*tx;
+      const by=Math.pow(1-t2,3)*sy+3*Math.pow(1-t2,2)*t2*sy+3*(1-t2)*t2*t2*ty+Math.pow(t2,3)*ty;
+      if(Math.hypot(wp.x-bx,wp.y-by)<THRESH){
+        return{...col, srcTable:st, tgtTable:tt};
+      }
+    }
+  }
+  return null;
+}
+
+function drawTable(t){
+  const cols=gc(t.id),x=t.pos_x||100,y=t.pos_y||100,h=TH+cols.length*CH+8;
+  const sp=w2s(x,y),sw=TW*sc,sh=h*sc,r=7*sc;
+  const isSel=S.table&&String(S.table.id)===String(t.id);
+  const isPending=String(t.id).startsWith('tmp_');
+  ctx.save();
+
+  // Selection glow
+  if(isSel){ctx.shadowColor='rgba(91,141,238,.45)';ctx.shadowBlur=16*sc;}
+
+  // Body
+  RR(sp.x,sp.y,sw,sh,r);
+  ctx.fillStyle=isPending?C.s3:C.tb;ctx.fill();
+  ctx.shadowBlur=0;
+
+  // Border (double for selected)
+  RR(sp.x,sp.y,sw,sh,r);
+  ctx.strokeStyle=isSel?C.ts:isPending?C.li:C.tbr;
+  ctx.lineWidth=isSel?2:.8;ctx.stroke();
+
+  // Header background
+  RRt(sp.x,sp.y,sw,TH*sc,r);
+  ctx.fillStyle=isSel?C.th:C.th;ctx.fill();
+
+  // Category bar (left edge)
+  const catClr=catColor(t.category_id);
+  ctx.fillStyle=catClr;ctx.beginPath();
+  ctx.moveTo(sp.x,sp.y+r);ctx.arcTo(sp.x,sp.y,sp.x+r,sp.y,r);
+  ctx.lineTo(sp.x+4*sc,sp.y);ctx.lineTo(sp.x+4*sc,sp.y+TH*sc);ctx.lineTo(sp.x,sp.y+TH*sc);
+  ctx.closePath();ctx.fill();
+
+  // Table name
+  ctx.fillStyle=C.ht;ctx.font=`bold ${~~(12*sc)}px Segoe UI`;
+  ctx.fillText(trunc(t.name,21),sp.x+10*sc,sp.y+TH*sc/2+4*sc);
+
+  // GSheet status dot (top-right of header)
+  const gsExists=sbSheetNames.has(t.name);
+  ctx.beginPath();ctx.arc(sp.x+sw-8*sc,sp.y+8*sc,3.5*sc,0,Math.PI*2);
+  ctx.fillStyle=gsExists?'#27ae60bb':'#5a5a6688';ctx.fill();
+  if(gsExists){ctx.strokeStyle='#27ae6044';ctx.lineWidth=1;ctx.stroke();}
+
+  // Pending spinner indicator
+  if(isPending){
+    ctx.font=`${~~(9*sc)}px Segoe UI`;
+    ctx.fillStyle=C.li+'88';
+    ctx.fillText('⏳',sp.x+sw-22*sc,sp.y+TH*sc/2+3*sc);
+  }
+
+  // Category + assignment chips
+  const cat=S.cats.find(c=>String(c.id)===String(t.category_id));
+  const asg=S.asgs.find(a=>String(a.id)===String(t.assignment_id));
+  if(sc>.5){
+    ctx.font=`${~~(8*sc)}px Segoe UI`;
+    let tx=sp.x+10*sc;
+    [cat,asg].forEach((it,ci)=>{
+      if(!it)return;
+      const tw=ctx.measureText(it.name).width+6*sc;
+      if(tx+tw>sp.x+sw-20*sc)return; // clip
+      RR(tx,sp.y+3*sc,tw,10*sc,2*sc);
+      ctx.fillStyle=ci===0?catClr+'22':'#7c5cbf22';ctx.fill();
+      ctx.fillStyle=ci===0?catClr:'#a78bfa';
+      ctx.fillText(it.name,tx+3*sc,sp.y+11.5*sc);
+      tx+=tw+3*sc;
+    });
+  }
+
+  // Separator line under header
+  ctx.strokeStyle=C.tbr;ctx.lineWidth=.5;
+  ctx.beginPath();ctx.moveTo(sp.x+4*sc,sp.y+TH*sc);ctx.lineTo(sp.x+sw-2*sc,sp.y+TH*sc);ctx.stroke();
+
+  // Columns
+  cols.forEach((col,i)=>{
+    const cy=sp.y+TH*sc+i*CH*sc;
+    // Hover highlight
+    if(String(hovT)===String(t.id)&&String(hovC)===String(col.id)){
+      ctx.fillStyle=C.ch;ctx.fillRect(sp.x+1,cy,sw-2,CH*sc);
+    }
+    const pk=isPK(col),fk=isFK(col);
+    const ct=S.ctypes.find(tp=>String(tp.id)===String(col.type_id));
+    const badge=pk?'PK':fk?'FK':(ct?ct.designation.toUpperCase().slice(0,4):'');
+    // Type badge
+    if(badge){
+      ctx.font=`bold ${~~(8*sc)}px Segoe UI`;
+      const bw=Math.max(ctx.measureText(badge).width+5*sc,22*sc);
+      RR(sp.x+5*sc,cy+5*sc,bw,12*sc,2.5*sc);
+      ctx.fillStyle=pk?C.pk+'1a':fk?C.fk+'1a':C.cb;ctx.fill();
+      ctx.fillStyle=pk?C.pk:fk?C.fk:'#9da5c9';
+      ctx.fillText(badge,sp.x+5*sc+(bw-ctx.measureText(badge).width)/2,cy+15*sc);
+    }
+    // Column name
+    ctx.fillStyle=pk?C.pk:fk?C.fk:C.ct;
+    ctx.font=`${~~(11*sc)}px Segoe UI`;
+    ctx.fillText(trunc(col.name,19),sp.x+36*sc,cy+CH*sc/2+4*sc);
+    // Type designation (right side, faded)
+    if(ct&&sc>.55){
+      ctx.fillStyle=C.t2+'66';ctx.font=`${~~(9*sc)}px Segoe UI`;
+      const dtw=ctx.measureText(ct.designation).width;
+      ctx.fillText(ct.designation,sp.x+sw-dtw-14*sc,cy+CH*sc/2+3*sc);
+    }
+    // FK handle dot — only on FK-typed columns (they can start relations)
+    if(!pk){
+      const hx=sp.x+sw-8*sc,hy=cy+CH*sc/2;
+      if(fk){
+        ctx.beginPath();ctx.arc(hx,hy,4.5*sc,0,Math.PI*2);
+        ctx.fillStyle=C.fk+'cc';ctx.fill();
+        ctx.strokeStyle=C.fk+'66';ctx.lineWidth=1;ctx.stroke();
+      }
+      // Non-FK non-PK: no visible handle (can't drag to create relation)
+    }
+    // Row separator
+    if(i<cols.length-1){
+      ctx.strokeStyle=C.tbr;ctx.lineWidth=.3;
+      ctx.beginPath();ctx.moveTo(sp.x+5*sc,cy+CH*sc);ctx.lineTo(sp.x+sw-5*sc,cy+CH*sc);ctx.stroke();
+    }
+  });
+
+  // Col count footer badge
+  if(sc>.5&&cols.length>0){
+    ctx.font=`${~~(8*sc)}px Segoe UI`;
+    const ftxt=cols.length+' кол.';
+    const fw=ctx.measureText(ftxt).width+6*sc;
+    ctx.fillStyle=C.tb;ctx.fillRect(sp.x+sw-fw-6*sc,sp.y+sh-11*sc,fw+4*sc,9*sc);
+    ctx.fillStyle=C.t2+'88';
+    ctx.fillText(ftxt,sp.x+sw-fw-4*sc,sp.y+sh-4*sc);
+  }
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
+// MINI-MAP RENDER
+// ═══════════════════════════════════════════════════════════
+function miniRender(){
+  const ts=schTables();
+  mctx.fillStyle=C.bg;mctx.fillRect(0,0,mc.width,mc.height);
+  if(!ts.length)return;
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  ts.forEach(t=>{
+    const x=t.pos_x||100,y=t.pos_y||100,h=TH+gc(t.id).length*CH+8;
+    if(x<minX)minX=x;if(y<minY)minY=y;
+    if(x+TW>maxX)maxX=x+TW;if(y+h>maxY)maxY=y+h;
+  });
+  const pad=40,rw=maxX-minX+pad*2,rh=maxY-minY+pad*2;
+  const s=Math.min(mc.width/rw,mc.height/rh);
+  const dx=(mc.width-rw*s)/2-minX*s+pad*s,dy=(mc.height-rh*s)/2-minY*s+pad*s;
+  ts.forEach(t=>{
+    const x=(t.pos_x||100)*s+dx,y=(t.pos_y||100)*s+dy;
+    const h=(TH+gc(t.id).length*CH+8)*s,w=TW*s;
+    mctx.fillStyle=S.table&&String(S.table.id)===String(t.id)?C.ts:C.tb;
+    mctx.fillRect(x,y,w,h);
+    mctx.strokeStyle=C.tbr;mctx.lineWidth=.5;mctx.strokeRect(x,y,w,h);
+  });
+  // Viewport rect
+  const vx=(-ox/sc)*s+dx,vy=(-oy/sc)*s+dy;
+  const vw=(cv.width/sc)*s,vh=(cv.height/sc)*s;
+  mctx.strokeStyle=C.ts;mctx.lineWidth=1;mctx.strokeRect(vx,vy,vw,vh);
+}
+</script>

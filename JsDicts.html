@@ -1,0 +1,39 @@
+<script>
+// ═══════════════════════════════════════════════════════════
+// DICTIONARIES
+// ═══════════════════════════════════════════════════════════
+let actDTab='cats';
+function openDicts(){actDTab='cats';renderDTabs();renderDBody();showM('m-dicts');}
+function renderDTabs(){document.querySelectorAll('.dtab').forEach(tab=>{tab.classList.toggle('on',tab.dataset.dt===actDTab);tab.onclick=()=>{actDTab=tab.dataset.dt;renderDTabs();renderDBody();};});}
+function renderDBody(){const b=document.getElementById('dict-body');if(!b)return;if(actDTab==='cats')dCats(b);else if(actDTab==='asgs')dAsgs(b);else dCts(b);}
+function dCats(b){b.innerHTML=S.cats.map(c=>`<div class="drow"><span class="dbadge" style="background:${catColor(c.id)}22;color:${catColor(c.id)}">${c.id}</span><span class="drow-name">${esc(c.name)}</span><span class="drow-desc">${esc(c.description||'')}</span><div class="dacts"><button onclick="dEdit('cats',${c.id})">✏️</button><button class="del" onclick="dDel('cats',${c.id},'${ea(c.name)}')">✕</button></div></div>`).join('')+`<div class="dadd"><input id="dc-n" type="text" placeholder="Название" style="flex:2"/><input id="dc-d" type="text" placeholder="Описание"/><button onclick="dAdd('cats')">＋</button></div>`;}
+function dAsgs(b){b.innerHTML=S.asgs.map(a=>`<div class="drow"><span class="dbadge">${a.id}</span><span class="drow-name">${esc(a.name)}</span><span class="drow-desc">${esc(a.description||'')}</span><div class="dacts"><button onclick="dEdit('asgs',${a.id})">✏️</button><button class="del" onclick="dDel('asgs',${a.id},'${ea(a.name)}')">✕</button></div></div>`).join('')+`<div class="dadd"><input id="da-n" type="text" placeholder="Название" style="flex:2"/><input id="da-d" type="text" placeholder="Описание"/><button onclick="dAdd('asgs')">＋</button></div>`;}
+function dCts(b){b.innerHTML=S.ctypes.map(t=>`<div class="drow"><span class="dbadge" style="background:var(--s3);color:var(--accent);font-family:monospace">${esc(t.designation)}</span><span class="drow-name">${esc(t.name)}</span><span class="drow-desc">${esc(t.description||'')}</span><div class="dacts"><button onclick="dEdit('cts',${t.id})">✏️</button><button class="del" onclick="dDel('cts',${t.id},'${ea(t.name)}')">✕</button></div></div>`).join('')+`<div class="dadd"><input id="dct-n" type="text" placeholder="Название (VARCHAR)" style="flex:2"/><input id="dct-s" type="text" placeholder="Обозн. (varchar)"/><input id="dct-d" type="text" placeholder="Описание"/><button onclick="dAdd('cts')">＋</button></div>`;}
+async function dAdd(type){
+  try{
+    if(type==='cats'){const n=document.getElementById('dc-n').value.trim(),d=document.getElementById('dc-d').value.trim();if(!n){toast('Введите название','err');return;}const it=await api('createCategory',{name:n,description:d});S.cats.push(it);['dc-n','dc-d'].forEach(id=>document.getElementById(id).value='');}
+    else if(type==='asgs'){const n=document.getElementById('da-n').value.trim(),d=document.getElementById('da-d').value.trim();if(!n){toast('Введите название','err');return;}const it=await api('createAssignment',{name:n,description:d});S.asgs.push(it);['da-n','da-d'].forEach(id=>document.getElementById(id).value='');}
+    else{const n=document.getElementById('dct-n').value.trim(),s=document.getElementById('dct-s').value.trim().toLowerCase(),d=document.getElementById('dct-d').value.trim();if(!n||!s){toast('Введите название и обозначение','err');return;}const it=await api('createColumnType',{name:n,designation:s,description:d});S.ctypes.push(it);['dct-n','dct-s','dct-d'].forEach(id=>document.getElementById(id).value='');}
+    toast('Добавлено','ok');renderDBody();
+  }catch(e){toast('Ошибка: '+e.message,'err');}
+}
+function dEdit(type,id){
+  const mp={cats:{arr:'cats',a:'updateCategory',l:'Категория'},asgs:{arr:'asgs',a:'updateAssignment',l:'Назначение'},cts:{arr:'ctypes',a:'updateColumnType',l:'Тип'}};
+  const cfg=mp[type];const item=S[cfg.arr].find(r=>String(r.id)===String(id));if(!item)return;
+  if(type!=='cts'){
+    const n=prompt(cfg.l+' — Название:',item.name);if(n===null)return;
+    const d=prompt('Описание:',item.description||'');if(d===null)return;
+    api(cfg.a,{id,name:n.trim(),description:d.trim()}).then(u=>{const i=S[cfg.arr].findindex(r=>String(r.id)===String(id));if(i>=0)S[cfg.arr][i]={...S[cfg.arr][i],...u};toast('Обновлено','ok');renderDBody();}).catch(e=>toast('Ошибка: '+e.message,'err'));
+  }else{
+    const n=prompt('Название:',item.name);if(n===null)return;
+    const s=prompt('Обозначение:',item.designation);if(s===null)return;
+    const d=prompt('Описание:',item.description||'');if(d===null)return;
+    api('updateColumnType',{id,name:n.trim(),designation:s.trim().toLowerCase(),description:d.trim()}).then(u=>{const i=S.ctypes.findIndex(r=>String(r.id)===String(id));if(i>=0)S.ctypes[i]={...S.ctypes[i],...u};toast('Обновлено','ok');renderDBody();}).catch(e=>toast('Ошибка: '+e.message,'err'));
+  }
+}
+async function dDel(type,id,name){
+  const mp={cats:{a:'deleteCategory',arr:'cats',l:'Категория'},asgs:{a:'deleteAssignment',arr:'asgs',l:'Назначение'},cts:{a:'deleteColumnType',arr:'ctypes',l:'Тип'}};
+  const cfg=mp[type];
+  conf(`Удалить "${name}"?`,`${cfg.l} будет удалён.`,async()=>{try{await api(cfg.a,{id});S[cfg.arr]=S[cfg.arr].filter(r=>String(r.id)!==String(id));toast('Удалено','ok');renderDBody();R();}catch(e){toast('Ошибка: '+e.message,'err');}});
+}
+</script>

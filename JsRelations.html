@@ -1,0 +1,144 @@
+<script>// ═══════════════════════════════════════════════════════════
+// RELATIONS MODAL
+// ═══════════════════════════════════════════════════════════
+function openRels(){
+  if(!S.schema){toast('Выберите схему','err');return;}
+  renderRelsList();
+  relFillSrcTbls();
+  relFillTgtTbls();
+  showM('m-rels');
+}
+
+function relFillSrcTbls(){
+  const ts=schTables();
+  const sel=document.getElementById('rel-src-tbl');
+  if(!sel)return;
+  sel.innerHTML='<option value="">— FK таблица —</option>'+ts.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  document.getElementById('rel-src-col').innerHTML='<option value="">— FK колонка —</option>';
+}
+function relFillTgtTbls(){
+  const ts=schTables();
+  const sel=document.getElementById('rel-tgt-tbl');
+  if(!sel)return;
+  sel.innerHTML='<option value="">— PK таблица —</option>'+ts.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  document.getElementById('rel-tgt-col').innerHTML='<option value="">— PK колонка —</option>';
+}
+function relFillSrcCols(){
+  const tid=document.getElementById('rel-src-tbl')?.value;
+  const sel=document.getElementById('rel-src-col');
+  if(!sel)return;
+  const cols=tid?gc(tid).filter(c=>isFK(c)):[];
+  sel.innerHTML='<option value="">— FK колонка —</option>'+cols.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  if(!cols.length&&tid){
+    sel.innerHTML='<option value="">⚠ Нет FK колонок</option>';
+  }
+}
+function relFillTgtCols(){
+  const tid=document.getElementById('rel-tgt-tbl')?.value;
+  const sel=document.getElementById('rel-tgt-col');
+  if(!sel)return;
+  const cols=tid?gc(tid).filter(c=>isPK(c)):[];
+  sel.innerHTML='<option value="">— PK колонка —</option>'+cols.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+}
+
+async function addRelFromModal(){
+  const srcTid=document.getElementById('rel-src-tbl')?.value;
+  const srcCid=document.getElementById('rel-src-col')?.value;
+  const tgtTid=document.getElementById('rel-tgt-tbl')?.value;
+  const tgtCid=document.getElementById('rel-tgt-col')?.value;
+  if(!srcTid||!srcCid){toast('Выберите FK таблицу и FK колонку','err');return;}
+  if(!tgtTid||!tgtCid){toast('Выберите PK таблицу и PK колонку','err');return;}
+  if(srcTid===tgtTid){toast('Нельзя связать таблицу саму с собой','err');return;}
+  const col=S.columns.find(c=>String(c.id)===srcCid);
+  if(!col){toast('Колонка не найдена','err');return;}
+  col.is_fk=true;col.fk_table_id=tgtTid;col.fk_column_id=tgtCid;
+  inv(col.table_id);
+  try{
+    await api('createRelation',{fk_column_id:srcCid,pk_table_id:tgtTid,pk_column_id:tgtCid});
+    toast('Связь создана ✓','ok');
+  }catch(e){toast('Ошибка: '+e.message,'err');}
+  R();renderRelsList();renderPanel();
+}
+
+// Inline edit of a relation target in the modal
+function relEditInline(btn,colId){
+  const col=S.columns.find(c=>String(c.id)===String(colId));
+  if(!col)return;
+  const row=btn.closest('.rel-row');
+  if(!row)return;
+  // Replace rel-to content with inline dropdowns
+  const relTo=row.querySelector('.rel-to');
+  const ts=schTables().filter(t=>String(t.id)!==String(col.table_id));
+  relTo.innerHTML=`<select id="rei-tbl" style="font-size:11px;padding:2px 5px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:3px" onchange="reiLoadCols(this,'${colId}')">
+    <option value="">— таблица —</option>
+    ${ts.map(t=>`<option value="${t.id}"${String(t.id)===String(col.fk_table_id)?' selected':''}>${esc(t.name)}</option>`).join('')}
+  </select>
+  <select id="rei-col" style="font-size:11px;padding:2px 5px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:3px"></select>
+  <button onclick="reiSave('${colId}',this)" style="padding:2px 7px;border-radius:3px;font-size:10px;background:var(--accent);color:#fff">✓</button>
+  <button onclick="renderRelsList()" style="padding:2px 7px;border-radius:3px;font-size:10px;background:var(--s2);border:1px solid var(--border);color:var(--t2)">✕</button>`;
+  reiLoadCols(document.getElementById('rei-tbl'),colId);
+}
+function reiLoadCols(selEl,colId){
+  const tid=selEl.value;
+  const col=S.columns.find(c=>String(c.id)===String(colId));
+  const pks=tid?gc(tid).filter(c=>isPK(c)):[];
+  document.getElementById('rei-col').innerHTML='<option value="">— PK —</option>'+
+    pks.map(c=>`<option value="${c.id}"${String(c.id)===String(col?.fk_column_id)?' selected':''}>${esc(c.name)}</option>`).join('');
+}
+async function reiSave(colId,btn){
+  const tblId=document.getElementById('rei-tbl')?.value;
+  const pkcId=document.getElementById('rei-col')?.value;
+  if(!tblId||!pkcId){toast('Выберите таблицу и PK колонку','err');return;}
+  const col=S.columns.find(c=>String(c.id)===String(colId));
+  if(!col)return;
+  col.fk_table_id=tblId;col.fk_column_id=pkcId;
+  inv(col.table_id);
+  try{
+    await api('updateColumn',{id:colId,fk_table_id:tblId,fk_column_id:pkcId,is_fk:true});
+    toast('Связь обновлена','ok');
+  }catch(e){toast('Ошибка: '+e.message,'err');}
+  R();renderRelsList();renderPanel();
+}
+
+function renderRelsList(){
+  const ts=schTables();
+  const search=(document.getElementById('rels-search')?.value||'').toLowerCase();
+  let rels=[];
+  ts.forEach(t=>{
+    gc(t.id).filter(c=>isFK(c)&&c.fk_table_id).forEach(c=>{
+      const tgt=S.tables.find(tt=>String(tt.id)===String(c.fk_table_id));
+      const tgtCol=S.columns.find(cc=>String(cc.id)===String(c.fk_column_id));
+      rels.push({srcTable:t,srcCol:c,tgtTable:tgt,tgtCol:tgtCol});
+    });
+  });
+  // filter
+  if(search){
+    rels=rels.filter(r=>(r.srcTable.name+r.srcCol.name+(r.tgtTable?.name||'')+(r.tgtCol?.name||'')).toLowerCase().includes(search));
+  }
+  // meta chips
+  document.getElementById('rels-meta').innerHTML=[
+    {l:'Всего связей',v:rels.length,c:'var(--fk)'},
+    {l:'Таблиц со связями',v:new Set(rels.map(r=>r.srcTable.id)).size,c:'var(--accent)'},
+  ].map(m=>`<div style="padding:4px 12px;background:var(--s2);border:1px solid var(--border);border-radius:6px;text-align:center">
+    <div style="font-size:15px;font-weight:700;color:${m.c}">${m.v}</div><div class="sm">${m.l}</div></div>`).join('');
+
+  if(!rels.length){
+    document.getElementById('rels-body').innerHTML='<div class="sm" style="text-align:center;padding:24px">Связей не найдено</div>';
+    return;
+  }
+  document.getElementById('rels-body').innerHTML=rels.map(r=>`
+    <div class="rel-row">
+      <div class="rel-from">
+        <span style="font-weight:700">${esc(r.srcTable.name)}</span>
+        <span class="rel-col">.${esc(r.srcCol.name)}</span>
+      </div>
+      <span class="rel-arrow">→</span>
+      <div class="rel-to">
+        <span style="font-weight:700">${esc(r.tgtTable?.name||'?')}</span>
+        <span class="rel-col">.${esc(r.tgtCol?.name||'?')}</span>
+      </div>
+      <span class="rel-type">FK→PK</span>
+      <button class="rel-edit" onclick="relEditInline(this,'${r.srcCol.id}')" title="Изменить цель связи">✏️</button>
+      <button class="rel-del" onclick="rmRel('${r.srcCol.id}');renderRelsList();" title="Удалить связь">✕</button>
+    </div>`).join('');
+}</script>
