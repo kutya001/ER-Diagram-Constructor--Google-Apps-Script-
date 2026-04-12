@@ -185,20 +185,69 @@ async function submitTable(){
         S.tables[idx]={...serverTable, pos_x: finalPos_x, pos_y: finalPos_y};
         S.table = S.tables[idx];
       }
-      // Remove temp columns
-      S.columns=S.columns.filter(c=>c.table_id!==tempId);
-      inv(tempId);inv(res.table.id);
-      // Create columns from mtCols
-      const colReqs=mtCols.map((c,i)=>({action:'createColumn',payload:{table_id:res.table.id,name:c.name,description:c.description||'',type_id:c.type_id,is_pk:c.is_pk||typeIsPK(c.type_id),is_fk:c.is_fk||typeIsFK(c.type_id),fk_table_id:c.fk_table_id||'',fk_column_id:c.fk_column_id||''}}));
+      
+      // Create columns from mtCols on the server
+      const colReqs=mtCols.map((c,i)=>{
+        const isPk = c.is_pk || typeIsPK(c.type_id);
+        const isFk = c.is_fk || typeIsFK(c.type_id);
+        return {
+          action:'createColumn',
+          payload:{
+            table_id:res.table.id,
+            name:c.name,
+            description:c.description||'',
+            type_id:c.type_id,
+            is_pk: isPk,
+            is_fk: isFk,
+            fk_table_id:c.fk_table_id||'',
+            fk_column_id:c.fk_column_id||'',
+            position: i + 1
+          }
+        };
+      });
+      
+      console.log('Creating columns, mtCols:', mtCols);
+      console.log('Column requests:', colReqs);
+      
+      let newCols = [];
       if(colReqs.length){
         const colResults=await new Promise((res2,rej)=>{
           google.script.run.withSuccessHandler(r=>r.ok?res2(r.data):rej(new Error(r.error))).withFailureHandler(e=>rej(new Error(e.message))).processBatch(colReqs);
         });
-        colResults.forEach(r=>{if(r.ok&&r.data){S.columns.push(r.data);inv(r.data.table_id);}});
+        // Collect all created columns
+        console.log('Created columns result:', colResults);
+        newCols = colResults.filter(r=>r.ok&&r.data).map(r=>r.data);
+        console.log('New columns extracted:', newCols);
       }
+      
+      // NOW remove temp columns (after creating real ones)
+      S.columns=S.columns.filter(c=>c.table_id!==tempId);
+      
+      // Add real columns to state
+      newCols.forEach(c=>{
+        console.log('Adding column to S.columns:', c);
+        S.columns.push(c);
+      });
+      
+      console.log('Total S.columns after adding:', S.columns.length);
+      console.log('Columns for table:', res.table.id, S.columns.filter(c=>String(c.table_id)===String(res.table.id)));
+      
+      // Invalidate cache for both temp and real table IDs
+      inv(tempId);
+      inv(res.table.id);
+      
+      // Force rebuild column cache by calling gc() which will re-filter S.columns
+      const finalCols = gc(res.table.id);
+      console.log('Final columns for table:', res.table.id, finalCols);
+      console.log('S.columns count:', S.columns.length, 'filtered count:', S.columns.filter(c=>String(c.table_id)===String(res.table.id)).length);
+      
       setSyncState('synced');
-      toast(`Таблица «${name}» сохранена, ${mtCols.length} столбцов`,'ok');
-      R();MR();renderPanel();
+      toast(`Таблица «${name}» сохранена, ${finalCols.length} столбцов`,'ok');
+      
+      // Re-render everything with fresh data
+      R();
+      MR();
+      renderPanel();
     }catch(e){toast('Ошибка сохранения: '+e.message,'err');setSyncState('error');}
   }else{
     // Edit mode — just update header, columns managed separately
