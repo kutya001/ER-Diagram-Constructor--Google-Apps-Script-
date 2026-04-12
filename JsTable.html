@@ -167,12 +167,24 @@ async function submitTable(){
     S.table=tempTable;
     closeM('m-table');R();MR();renderPanel();
     toast('Таблица добавлена (синхронизация…)','inf');
+    
+    // Save original position to restore if needed
+    const originalPos_x = tempTable.pos_x;
+    const originalPos_y = tempTable.pos_y;
+    
     // Background sync
     try{
       const res=await api('createTableWithTemplate',{schema_id:S.schema.id,name,description:desc,category_id:cid,assignment_id:aid,pos_x:tempTable.pos_x,pos_y:tempTable.pos_y,apply_templates:false});
-      // Replace temp table with real
+      // Replace temp table with real - PRESERVE POSITION from original
       const idx=S.tables.findIndex(t=>t.id===tempId);
-      if(idx>=0)S.tables[idx]={...res.table};
+      if(idx>=0){
+        // Ensure position is preserved - use original position if server response doesn't have it
+        const serverTable = res.table;
+        const finalPos_x = (serverTable.pos_x != null) ? serverTable.pos_x : originalPos_x;
+        const finalPos_y = (serverTable.pos_y != null) ? serverTable.pos_y : originalPos_y;
+        S.tables[idx]={...serverTable, pos_x: finalPos_x, pos_y: finalPos_y};
+        S.table = S.tables[idx];
+      }
       // Remove temp columns
       S.columns=S.columns.filter(c=>c.table_id!==tempId);
       inv(tempId);inv(res.table.id);
@@ -184,7 +196,6 @@ async function submitTable(){
         });
         colResults.forEach(r=>{if(r.ok&&r.data){S.columns.push(r.data);inv(r.data.table_id);}});
       }
-      S.table=res.table;
       setSyncState('synced');
       toast(`Таблица «${name}» сохранена, ${mtCols.length} столбцов`,'ok');
       R();MR();renderPanel();
@@ -219,6 +230,11 @@ async function cpTable(){
   R();MR();renderPanel();
   setSyncState('pending');
   toast('Создание копии…','inf');
+  
+  // Save original position
+  const originalPos_x = tempTable.pos_x;
+  const originalPos_y = tempTable.pos_y;
+  
   try{
     const nt=await api('copyTable',{id:src.id});
     // Remove temp table+cols
@@ -227,9 +243,13 @@ async function cpTable(){
     inv(tempId);
     // Load real columns
     const nc=await api('getColumnsByTable',{table_id:nt.id});
-    S.tables.push(nt);
+    // Ensure position is preserved
+    const finalPos_x = (nt.pos_x != null) ? nt.pos_x : originalPos_x;
+    const finalPos_y = (nt.pos_y != null) ? nt.pos_y : originalPos_y;
+    const preservedTable = {...nt, pos_x: finalPos_x, pos_y: finalPos_y};
+    S.tables.push(preservedTable);
     nc.forEach(c=>{S.columns.push(c);inv(c.table_id);});
-    S.table=nt;
+    S.table=preservedTable;
     setSyncState('synced');
     toast('Таблица скопирована','ok');R();MR();renderPanel();
   }catch(e){

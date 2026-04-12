@@ -11,10 +11,27 @@ function resetView(){sc=1;ox=80;oy=80;document.getElementById('zoom-lbl').textCo
 function toggleLayoutMenu(e){
   e.stopPropagation();
   const m=document.getElementById('layout-menu');
+  const btn=document.getElementById('btn-al');
   const open=m.style.display!=='none';
-  m.style.display=open?'none':'block';
-  if(!open){
-    const close=()=>{m.style.display='none';document.removeEventListener('click',close);};
+  
+  if(open){
+    m.style.display='none';
+  } else {
+    // Position menu relative to button to avoid overflow issues
+    const btnRect=btn.getBoundingClientRect();
+    m.style.display='block';
+    m.style.position='fixed';
+    m.style.top=(btnRect.bottom+4)+'px';
+    m.style.left=btnRect.left+'px';
+    m.style.zIndex='3000';
+    
+    // Close on outside click
+    const close=(ev)=>{
+      if(!m.contains(ev.target)&&ev.target!==btn){
+        m.style.display='none';
+        document.removeEventListener('click',close);
+      }
+    };
     setTimeout(()=>document.addEventListener('click',close),10);
   }
 }

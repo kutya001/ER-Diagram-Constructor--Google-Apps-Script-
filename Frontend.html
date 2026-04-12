@@ -29,12 +29,12 @@
   <button class="tb danger" id="btn-ds" onclick="deleteSchema()" disabled title="Удалить схему">🗑</button>
   <div class="sep"></div>
   <button class="tb primary" id="btn-at" onclick="addTable()" disabled>＋ Таблица</button>
-  <div id="layout-w" style="position:relative;display:inline-block">
+  <div id="layout-w" style="position:relative;display:inline-block;overflow:visible">
     <button class="tb" id="btn-al" disabled title="Авторасположение" style="display:flex;align-items:center;gap:3px"
       onclick="toggleLayoutMenu(event)">⊞ <span style="font-size:9px;opacity:.7">▾</span></button>
-    <div id="layout-menu" style="display:none;position:absolute;top:calc(100% + 4px);left:0;
+    <div id="layout-menu" style="display:none;position:absolute;top:100%;left:0;
       background:var(--surface);border:1px solid var(--border);border-radius:8px;
-      box-shadow:var(--shadow);min-width:200px;z-index:3000;padding:4px 0;white-space:nowrap">
+      box-shadow:var(--shadow);min-width:200px;z-index:3000;padding:4px 0;white-space:nowrap;margin-top:4px">
       <div class="layout-opt" onclick="doLayout('smart')"     title="Иерархия по FK-зависимостям">🧠 Умное (по FK)</div>
       <div class="layout-opt" onclick="doLayout('grid')"      title="Равномерная сетка">⊞ Сетка</div>
       <div class="layout-opt" onclick="doLayout('radial')"    title="Центральная таблица окружена связями">🔵 Радиальное</div>

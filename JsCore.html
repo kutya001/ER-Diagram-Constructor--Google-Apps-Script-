@@ -138,10 +138,15 @@ function setSyncState(s){
       requestAnimationFrame(()=>{ bar.style.width='75%'; }); }
     if(topBar){ topBar.style.opacity='1'; topBar.style.transition='width 1.5s ease';
       requestAnimationFrame(()=>{ topBar.style.width='75%'; }); }
+    // Add intermediate animation steps for better visibility
     _syncAnim = setTimeout(()=>{
-      if(bar) bar.style.width='90%';
-      if(topBar) topBar.style.width='90%';
-    }, 1500);
+      if(bar) bar.style.width='85%';
+      if(topBar) topBar.style.width='85%';
+      _syncAnim = setTimeout(()=>{
+        if(bar) bar.style.width='90%';
+        if(topBar) topBar.style.width='90%';
+      }, 800);
+    }, 1000);
 
   } else if(s === 'synced'){
     icon.innerHTML = '<span style="color:var(--green);font-size:13px">✓</span>';
@@ -149,22 +154,24 @@ function setSyncState(s){
     // Flash green to 100% then hide
     if(bar){ bar.style.transition='width .2s ease'; bar.style.width='100%'; bar.style.background='var(--green)'; }
     if(topBar){ topBar.style.transition='width .2s ease'; topBar.style.width='100%'; }
+    // Increased delay to make animation more visible
     syncProgressTO = setTimeout(()=>{
       if(barWrap) barWrap.style.display='none';
       if(bar){ bar.style.transition='none'; bar.style.width='0%'; }
       if(topBar){ topBar.style.transition='opacity .4s'; topBar.style.opacity='0';
         setTimeout(()=>{ topBar.style.width='0%'; topBar.style.transition='none'; }, 420); }
-    }, 700);
+    }, 1500); // Increased from 700ms to 1500ms
 
   } else { // error
     icon.innerHTML = '<span style="color:var(--red)">✗</span>';
     txt.textContent = 'Ошибка синхр.'; txt.style.color = 'var(--red)';
     if(bar){ bar.style.transition='width .3s'; bar.style.width='100%'; bar.style.background='var(--red)'; }
     if(topBar){ topBar.style.transition='opacity .3s'; topBar.style.opacity='0'; }
+    // Increased delay to make animation more visible
     syncProgressTO = setTimeout(()=>{
       if(barWrap) barWrap.style.display='none';
       if(bar){ bar.style.transition='none'; bar.style.width='0%'; }
-    }, 1500);
+    }, 2500); // Increased from 1500ms to 2500ms
   }
 }
 
