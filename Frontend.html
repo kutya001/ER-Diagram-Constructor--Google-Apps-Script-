@@ -35,6 +35,7 @@
     <div id="layout-menu" style="display:none;position:absolute;top:100%;left:0;
       background:var(--surface);border:1px solid var(--border);border-radius:8px;
       box-shadow:var(--shadow);min-width:200px;z-index:3000;padding:4px 0;white-space:nowrap;margin-top:4px">
+      <div class="layout-opt" onclick="doLayout('hierarchical')" title="Иерархическая структура по уровням">🏗️ Иерархическое</div>
       <div class="layout-opt" onclick="doLayout('smart')"     title="Иерархия по FK-зависимостям">🧠 Умное (по FK)</div>
       <div class="layout-opt" onclick="doLayout('grid')"      title="Равномерная сетка">⊞ Сетка</div>
       <div class="layout-opt" onclick="doLayout('radial')"    title="Центральная таблица окружена связями">🔵 Радиальное</div>

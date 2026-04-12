@@ -41,11 +41,12 @@ function doLayout(mode){
   const ts=schTables();
   if(!ts.length)return;
   switch(mode){
-    case 'smart':    layoutSmart(ts);    break;
-    case 'grid':     layoutGrid(ts);     break;
-    case 'radial':   layoutRadial(ts);   break;
-    case 'category': layoutCategory(ts); break;
-    case 'compact':  layoutCompact(ts);  break;
+    case 'smart':       layoutSmart(ts);       break;
+    case 'hierarchical':layoutHierarchical(ts); break;
+    case 'grid':        layoutGrid(ts);        break;
+    case 'radial':      layoutRadial(ts);      break;
+    case 'category':    layoutCategory(ts);    break;
+    case 'compact':     layoutCompact(ts);     break;
   }
   R(); MR(); savePending();
   fitView(ts);
@@ -70,7 +71,7 @@ function fitView(ts){
 
 // ── Mode 1: Smart (FK hierarchy — topological sort) ──────────
 function layoutSmart(ts){
-  const PAD_X=70, PAD_Y=50, CARD_W=TW+PAD_X;
+  const PAD_X=90, PAD_Y=70, CARD_W=TW+PAD_X; // Increased spacing
   const fkEdges={};
   ts.forEach(t=>{ fkEdges[String(t.id)]=new Set(); });
   ts.forEach(t=>gc(t.id).forEach(col=>{
@@ -101,7 +102,7 @@ function layoutSmart(ts){
   const cols={};
   ts.forEach(t=>{ const d=depth[String(t.id)]; if(!cols[d])cols[d]=[]; cols[d].push(t); });
   const startX=60,startY=60;
-  const totalRows=Math.max(...Object.values(cols).map(g=>g.length));
+  const totalRows=Math.max(...Object.values(cols).map(g=>g.length),1);
   Object.keys(cols).sort((a,b)=>+a-+b).forEach((d,ci)=>{
     const group=cols[d].sort((a,b)=>a.name.localeCompare(b.name));
     const colH=group.length*(280+PAD_Y);
@@ -114,10 +115,133 @@ function layoutSmart(ts){
   });
 }
 
+// ── Mode 1.5: Hierarchical (hierarchical — like ERD tools) ──────────
+function layoutHierarchical(ts){
+  const PAD_X=90, PAD_Y=60, CARD_H=280;
+  
+  // Analyze dependencies
+  const fkEdges={};
+  ts.forEach(t=>{ fkEdges[String(t.id)]=new Set(); });
+  ts.forEach(t=>gc(t.id).forEach(col=>{
+    if(isFK(col)&&col.fk_table_id){
+      const sid=String(t.id),pid=String(col.fk_table_id);
+      if(fkEdges[sid]&&pid!==sid) fkEdges[sid].add(pid);
+    }
+  }));
+  
+  // Count incoming/outgoing FK connections
+  const inDeg={};
+  const outDeg={};
+  ts.forEach(t=>{
+    inDeg[String(t.id)]=0;
+    outDeg[String(t.id)]=0;
+  });
+  Object.entries(fkEdges).forEach(([child,parents])=>{
+    outDeg[child]=parents.size;
+    parents.forEach(pid=>{
+      if(inDeg[pid]!==undefined) inDeg[pid]++;
+    });
+  });
+  
+  // Classify tables into layers
+  const layers={
+    refs: [],      // Dictionaries/reference tables (no incoming FK)
+    main: [],      // Main tables (few outgoing FK, some incoming)
+    details: [],   // Detail tables (many outgoing FK)
+    trans: []      // Transaction tables (in the middle of flow)
+  };
+  
+  ts.forEach(t=>{
+    const tid=String(t.id);
+    const name=t.name.toLowerCase();
+    const isDict=name.startsWith('dict_')||name.startsWith('справочник');
+    const out=outDeg[tid]||0;
+    const inn=inDeg[tid]||0;
+    
+    if(isDict||inn===0){
+      layers.refs.push(t);
+    } else if(out===0&&inn>0){
+      layers.trans.push(t);
+    } else if(out>inn){
+      layers.details.push(t);
+    } else {
+      layers.main.push(t);
+    }
+  });
+  
+  // If classification didn't work well, use dependency depth
+  if(layers.refs.length+layers.main.length===0){
+    const depth={};
+    ts.forEach(t=>{ depth[String(t.id)]=0; });
+    const queue=ts.filter(t=>inDeg[String(t.id)]===0).map(t=>String(t.id));
+    const visited=new Set();
+    while(queue.length){
+      const id=queue.shift();
+      if(visited.has(id))continue;
+      visited.add(id);
+      Object.entries(fkEdges).forEach(([child,parents])=>{
+        if(parents.has(id)){
+          depth[child]=Math.max(depth[child],(depth[id]||0)+1);
+          queue.push(child);
+        }
+      });
+    }
+    
+    const maxDepth=Math.max(...Object.values(depth),0);
+    ts.forEach(t=>{
+      const d=depth[String(t.id)];
+      if(d===0) layers.refs.push(t);
+      else if(d===maxDepth) layers.trans.push(t);
+      else if(d===maxDepth-1&&maxDepth>1) layers.details.push(t);
+      else layers.main.push(t);
+    });
+  }
+  
+  // Layout: refs top-right, main center, details left, trans bottom
+  const startX=60, startY=60;
+  
+  // Place reference tables in top row
+  layers.refs.sort((a,b)=>a.name.localeCompare(b.name));
+  layers.refs.forEach((t,i)=>{
+    t.pos_x=startX+(i%4)*(TW+PAD_X);
+    t.pos_y=startY+Math.floor(i/4)*(CARD_H+PAD_Y);
+    pending[t.id]=true;
+  });
+  
+  // Place main tables in center (below refs)
+  const mainStartX=startX+100;
+  const mainStartY=startY+(Math.ceil(layers.refs.length/4))*(CARD_H+PAD_Y)+PAD_Y*2;
+  layers.main.sort((a,b)=>a.name.localeCompare(b.name));
+  layers.main.forEach((t,i)=>{
+    t.pos_x=mainStartX+(i%3)*(TW+PAD_X);
+    t.pos_y=mainStartY+Math.floor(i/3)*(CARD_H+PAD_Y);
+    pending[t.id]=true;
+  });
+  
+  // Place detail tables on the left
+  const detailStartX=startX;
+  const detailStartY=mainStartY;
+  layers.details.sort((a,b)=>a.name.localeCompare(b.name));
+  layers.details.forEach((t,i)=>{
+    t.pos_x=detailStartX;
+    t.pos_y=detailStartY+i*(CARD_H+PAD_Y);
+    pending[t.id]=true;
+  });
+  
+  // Place transaction tables at bottom
+  const transStartY=Math.max(mainStartY,detailStartY+layers.details.length*(CARD_H+PAD_Y))+PAD_Y*2;
+  layers.trans.sort((a,b)=>a.name.localeCompare(b.name));
+  layers.trans.forEach((t,i)=>{
+    t.pos_x=startX+(i%4)*(TW+PAD_X);
+    t.pos_y=transStartY+Math.floor(i/4)*(CARD_H+PAD_Y);
+    pending[t.id]=true;
+  });
+}
+
 // ── Mode 2: Grid (simple NxM grid) ──────────────────────────
 function layoutGrid(ts){
   const cols=Math.ceil(Math.sqrt(ts.length*1.4));
-  const PAD_X=70, PAD_Y=55;
+  const PAD_X=90, PAD_Y=70; // Increased spacing for better readability
   ts.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach((t,i)=>{
     t.pos_x=60+(i%cols)*(TW+PAD_X);
     t.pos_y=60+Math.floor(i/cols)*(260+PAD_Y);
@@ -143,7 +267,8 @@ function layoutRadial(ts){
   const cx=500, cy=400;
   center.pos_x=cx-TW/2; center.pos_y=cy-60;
   pending[center.id]=true;
-  const R2=Math.max(280, rest.length*60);
+  // Increased radius for better readability
+  const R2=Math.max(350, rest.length*70);
   rest.forEach((t,i)=>{
     const angle=(2*Math.PI*i/rest.length)-Math.PI/2;
     t.pos_x=cx+R2*Math.cos(angle)-TW/2;
@@ -154,7 +279,7 @@ function layoutRadial(ts){
 
 // ── Mode 4: By category (category groups side by side) ───────
 function layoutCategory(ts){
-  const PAD_X=80, PAD_Y=50, GROUP_GAP=120;
+  const PAD_X=100, PAD_Y=60, GROUP_GAP=140; // Increased spacing
   // Group by category
   const groups={};
   ts.forEach(t=>{
@@ -176,7 +301,7 @@ function layoutCategory(ts){
 
 // ── Mode 5: Compact (tight packing, minimize overlap) ────────
 function layoutCompact(ts){
-  const PAD_X=40, PAD_Y=30;
+  const PAD_X=50, PAD_Y=40; // Slightly increased for readability
   const cols=Math.ceil(Math.sqrt(ts.length));
   // Sort: most columns first (taller cards go left)
   const sorted=[...ts].sort((a,b)=>gc(b.id).length-gc(a.id).length);
