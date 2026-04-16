@@ -311,3 +311,280 @@ function importSchemaJson(p) {
     api_calls:    'batch (5 writes total)',
   };
 }
+
+// ═══════════════════════════════════════════════════════════
+// SQL Export — PostgreSQL, MSSQL, MySQL, SQLite
+// ═══════════════════════════════════════════════════════════
+function exportSchemaSql(p) {
+  const schemaId = p.schema_id;
+  if (!schemaId) throw new Error('schema_id required');
+  
+  const tables = _allRows(SHEETS.TABLES).filter(t => String(t.schema_id) === String(schemaId));
+  const columns = {};
+  tables.forEach(t => {
+    columns[t.id] = _allRows(SHEETS.COLUMNS).filter(c => String(c.table_id) === String(t.id)).sort((a,b) => Number(a.position) - Number(b.position));
+  });
+  
+  const meta = {
+    table_count: tables.length,
+    column_count: tables.reduce((sum, t) => sum + (columns[t.id] || []).length, 0),
+    relation_count: tables.reduce((sum, t) => sum + (columns[t.id] || []).filter(c => c.is_fk).length, 0)
+  };
+  
+  // Generate DDL for each dialect
+  const dialects = {
+    postgresql: generatePostgreSQL(tables, columns),
+    mssql: generateMSSQL(tables, columns),
+    mysql: generateMySQL(tables, columns),
+    sqlite: generateSQLite(tables, columns)
+  };
+  
+  return {
+    meta: meta,
+    tables: tables.map(t => ({id: t.id, name: t.name})),
+    dialects: dialects
+  };
+}
+
+function generatePostgreSQL(tables, columns) {
+  let sql = '';
+  tables.forEach(t => {
+    const cols = columns[t.id] || [];
+    sql += `CREATE TABLE "${t.name}" (\n`;
+    const colDefs = cols.map(c => {
+      let def = `  "${c.name}" ${pgType(c.type_designation)}`;
+      if (c.is_pk) def += ' PRIMARY KEY';
+      if (!c.is_pk && !c.is_fk && c.type_designation !== 'pk') def += c.nullable ? ' NULL' : ' NOT NULL';
+      return def;
+    });
+    
+    // Add FK constraints
+    const fkCols = cols.filter(c => c.is_fk);
+    fkCols.forEach((c, i) => {
+      const fkTable = getTableById(c.fk_table_id);
+      const fkCol = c.fk_column_id ? getColumnById(c.fk_column_id) : null;
+      if (fkTable) {
+        colDefs.push(`  CONSTRAINT "fk_${c.name}" FOREIGN KEY ("${c.name}") REFERENCES "${fkTable.name}"("${fkCol ? fkCol.name : 'id'}")`);
+      }
+    });
+    
+    sql += colDefs.join(',\n');
+    sql += `\n);\n\n`;
+  });
+  return sql.trim();
+}
+
+function generateMSSQL(tables, columns) {
+  let sql = '';
+  tables.forEach(t => {
+    const cols = columns[t.id] || [];
+    sql += `CREATE TABLE [${t.name}] (\n`;
+    const colDefs = cols.map(c => {
+      let def = `  [${c.name}] ${mssqlType(c.type_designation)}`;
+      if (c.is_pk) def += ' PRIMARY KEY';
+      if (!c.is_pk && !c.is_fk && c.type_designation !== 'pk') def += c.nullable ? ' NULL' : ' NOT NULL';
+      return def;
+    });
+    
+    const fkCols = cols.filter(c => c.is_fk);
+    fkCols.forEach((c, i) => {
+      const fkTable = getTableById(c.fk_table_id);
+      const fkCol = c.fk_column_id ? getColumnById(c.fk_column_id) : null;
+      if (fkTable) {
+        colDefs.push(`  CONSTRAINT [fk_${c.name}] FOREIGN KEY ([${c.name}]) REFERENCES [${fkTable.name}]([${fkCol ? fkCol.name : 'id'}])`);
+      }
+    });
+    
+    sql += colDefs.join(',\n');
+    sql += `\n);\n\n`;
+  });
+  return sql.trim();
+}
+
+function generateMySQL(tables, columns) {
+  let sql = '';
+  tables.forEach(t => {
+    const cols = columns[t.id] || [];
+    sql += `CREATE TABLE \`${t.name}\` (\n`;
+    const colDefs = cols.map(c => {
+      let def = `  \`${c.name}\` ${mysqlType(c.type_designation)}`;
+      if (c.is_pk) def += ' PRIMARY KEY';
+      if (!c.is_pk && !c.is_fk && c.type_designation !== 'pk') def += c.nullable ? ' NULL' : ' NOT NULL';
+      return def;
+    });
+    
+    const fkCols = cols.filter(c => c.is_fk);
+    fkCols.forEach((c, i) => {
+      const fkTable = getTableById(c.fk_table_id);
+      const fkCol = c.fk_column_id ? getColumnById(c.fk_column_id) : null;
+      if (fkTable) {
+        colDefs.push(`  KEY \`fk_${c.name}\` (\`${c.name}\`),\n  CONSTRAINT \`fk_${c.name}\` FOREIGN KEY (\`${c.name}\`) REFERENCES \`${fkTable.name}\` (\`${fkCol ? fkCol.name : 'id'}\`)`);
+      }
+    });
+    
+    sql += colDefs.join(',\n');
+    sql += `\n);\n\n`;
+  });
+  return sql.trim();
+}
+
+function generateSQLite(tables, columns) {
+  let sql = '';
+  tables.forEach(t => {
+    const cols = columns[t.id] || [];
+    sql += `CREATE TABLE "${t.name}" (\n`;
+    const colDefs = cols.map(c => {
+      let def = `  "${c.name}" ${sqliteType(c.type_designation)}`;
+      if (c.is_pk) def += ' PRIMARY KEY';
+      if (!c.is_pk && !c.is_fk && c.type_designation !== 'pk') def += c.nullable ? ' NULL' : ' NOT NULL';
+      return def;
+    });
+    
+    const fkCols = cols.filter(c => c.is_fk);
+    fkCols.forEach((c, i) => {
+      const fkTable = getTableById(c.fk_table_id);
+      const fkCol = c.fk_column_id ? getColumnById(c.fk_column_id) : null;
+      if (fkTable) {
+        colDefs.push(`  FOREIGN KEY ("${c.name}") REFERENCES "${fkTable.name}"("${fkCol ? fkCol.name : 'id'}")`);
+      }
+    });
+    
+    sql += colDefs.join(',\n');
+    sql += `\n);\n\n`;
+  });
+  return sql.trim();
+}
+
+// Type mapping helpers
+function pgType(designation) {
+  const map = {pk: 'SERIAL', int: 'INTEGER', bigint: 'BIGINT', float: 'REAL', bool: 'BOOLEAN', str: 'VARCHAR(255)', text: 'TEXT', date: 'DATE', time: 'TIME', datetime: 'TIMESTAMP', uuid: 'UUID', json: 'JSON'};
+  return map[designation] || 'TEXT';
+}
+
+function mssqlType(designation) {
+  const map = {pk: 'INT IDENTITY(1,1)', int: 'INT', bigint: 'BIGINT', float: 'FLOAT', bool: 'BIT', str: 'NVARCHAR(255)', text: 'NVARCHAR(MAX)', date: 'DATE', time: 'TIME', datetime: 'DATETIME2', uuid: 'UNIQUEIDENTIFIER', json: 'NVARCHAR(MAX)'};
+  return map[designation] || 'NVARCHAR(255)';
+}
+
+function mysqlType(designation) {
+  const map = {pk: 'INT AUTO_INCREMENT', int: 'INT', bigint: 'BIGINT', float: 'FLOAT', bool: 'TINYINT(1)', str: 'VARCHAR(255)', text: 'TEXT', date: 'DATE', time: 'TIME', datetime: 'DATETIME', uuid: 'CHAR(36)', json: 'JSON'};
+  return map[designation] || 'VARCHAR(255)';
+}
+
+function sqliteType(designation) {
+  const map = {pk: 'INTEGER', int: 'INTEGER', bigint: 'INTEGER', float: 'REAL', bool: 'INTEGER', str: 'TEXT', text: 'TEXT', date: 'TEXT', time: 'TEXT', datetime: 'TEXT', uuid: 'TEXT', json: 'TEXT'};
+  return map[designation] || 'TEXT';
+}
+
+// Helper functions to get table/column by ID
+function getTableById(id) {
+  return _allRows(SHEETS.TABLES).find(t => String(t.id) === String(id));
+}
+
+function getColumnById(id) {
+  if (!id) return null;
+  return _allRows(SHEETS.COLUMNS).find(c => String(c.id) === String(id));
+}
+
+function getColumnsByTable(tableId) {
+  return _allRows(SHEETS.COLUMNS).filter(c => String(c.table_id) === String(tableId)).sort((a,b) => Number(a.position) - Number(b.position));
+}
+
+// ═══════════════════════════════════════════════════════════
+// SQL Import — Parse DDL and create schema
+// ═══════════════════════════════════════════════════════════
+function importSchemaSql(p) {
+  const sql = p.sql || '';
+  const dialect = p.dialect || 'auto';
+  if (!sql.trim()) throw new Error('SQL is empty');
+  
+  // Simple parser - extract CREATE TABLE statements
+  const createRegex = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"\[\]]?(\w+)[`"\]\]]?\s*\(([\s\S]*?)\)\s*;/gi;
+  const tables = [];
+  let match;
+  
+  while ((match = createRegex.exec(sql)) !== null) {
+    const tableName = match[1];
+    const columnsDef = match[2];
+    const columns = parseColumns(columnsDef, dialect);
+    tables.push({name: tableName, columns: columns});
+  }
+  
+  if (tables.length === 0) {
+    throw new Error('No CREATE TABLE statements found');
+  }
+  
+  // Create schema using existing JSON import logic
+  const jsonSchema = {
+    schema: {name: 'Imported_' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')},
+    tables: tables
+  };
+  
+  return importSchemaJson({json: jsonSchema, overwrite: false});
+}
+
+function parseColumns(columnsDef, dialect) {
+  const columns = [];
+  const lines = columnsDef.split(',').filter(l => l.trim());
+  
+  lines.forEach(line => {
+    line = line.trim();
+    // Skip constraints
+    if (/^(PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT|KEY|INDEX)/i.test(line)) return;
+    
+    // Parse column definition
+    const colMatch = line.match(/^[`"\[\]]?(\w+)[`"\]\]]?\s+(\w+(?:\([^)]+\))?)/i);
+    if (!colMatch) return;
+    
+    const colName = colMatch[1];
+    const colType = colMatch[2].toUpperCase();
+    
+    // Determine type designation
+    let designation = 'str';
+    if (/INT/.test(colType) && !/BIG/.test(colType)) designation = 'int';
+    else if (/BIGINT/.test(colType)) designation = 'bigint';
+    else if (/FLOAT|REAL|DOUBLE|DECIMAL|NUMERIC/.test(colType)) designation = 'float';
+    else if (/BOOL|BIT/.test(colType)) designation = 'bool';
+    else if (/TEXT|CHAR|VARCHAR|NVARCHAR/.test(colType)) designation = colType.includes('TEXT') || colType.includes('MAX') ? 'text' : 'str';
+    else if (/DATE/.test(colType) && !/TIME/.test(colType)) designation = 'date';
+    else if (/TIME/.test(colType) && !/DATETIME|TIMESTAMP/.test(colType)) designation = 'time';
+    else if (/DATETIME|TIMESTAMP/.test(colType)) designation = 'datetime';
+    else if (/UUID/.test(colType)) designation = 'uuid';
+    else if (/JSON/.test(colType)) designation = 'json';
+    
+    const isPk = /PRIMARY\s+KEY/i.test(line);
+    const isFk = /FOREIGN\s+KEY/i.test(line);
+    const nullable = !/NOT\s+NULL/i.test(line);
+    
+    // Extract FK reference
+    let fkTable = null, fkColumn = null;
+    const fkMatch = line.match(/REFERENCES\s+[`"\[\]]?(\w+)[`"\]\]]?\s*\(?([`"\[\]]?\w+[`"\]\]]?)\)?/i);
+    if (fkMatch) {
+      fkTable = fkMatch[1];
+      fkColumn = fkMatch[2].replace(/[`"\[\]]/g, '');
+    }
+    
+    columns.push({
+      name: colName,
+      type: designation,
+      type_designation: designation,
+      is_pk: isPk,
+      is_fk: isFk,
+      nullable: nullable,
+      fk_table: fkTable,
+      fk_column: fkColumn || 'id',
+      description: ''
+    });
+  });
+  
+  // Ensure PK exists
+  const hasPk = columns.some(c => c.is_pk);
+  if (!hasPk && columns.length > 0) {
+    // First column is usually id
+    columns[0].is_pk = true;
+    columns[0].type = 'pk';
+    columns[0].type_designation = 'pk';
+  }
+  
+  return columns;
+}
