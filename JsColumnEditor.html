@@ -54,7 +54,17 @@ function fillFkTable(selT='',selC=''){
 function loadFkCols(selC=''){
   const tid=document.getElementById('mc-fkt').value;
   const pks=S.columns.filter(c=>String(c.table_id)===String(tid)&&isPK(c));
-  document.getElementById('mc-fkc').innerHTML='<option value="">— PK колонка —</option>'+pks.map(c=>`<option value="${c.id}"${String(c.id)===String(selC)?' selected':''}>${esc(c.name)}</option>`).join('');
+  const fkcFg=document.getElementById('fkc-fg');
+  if(pks.length===1){
+    // Авто-выбор единственного PK - скрываем селект колонки
+    document.getElementById('mc-fkc').innerHTML='<option value="'+pks[0].id+'">'+esc(pks[0].name)+'</option>';
+    document.getElementById('mc-fkc').value=pks[0].id;
+    if(fkcFg)fkcFg.style.display='none';
+  }else{
+    // Несколько PK - показываем селект для выбора
+    document.getElementById('mc-fkc').innerHTML='<option value="">— PK колонка —</option>'+pks.map(c=>`<option value="${c.id}"${String(c.id)===String(selC)?' selected':''}>${esc(c.name)}</option>`).join('');
+    if(fkcFg)fkcFg.style.display='block';
+  }
 }
 
 async function submitCol(){
@@ -72,7 +82,7 @@ async function submitCol(){
   }
   if(fk){
     if(!fkt){toast('Выберите таблицу FK','err');return;}
-    if(!fkc){toast('Выберите PK-колонку','err');return;}
+    if(!fkc){toast('PK колонка не выбрана (должна быть ровно одна PK в таблице)','err');return;}
   }
   closeM('m-col');
   try{

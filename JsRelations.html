@@ -38,7 +38,13 @@ function relFillTgtCols(){
   const sel=document.getElementById('rel-tgt-col');
   if(!sel)return;
   const cols=tid?gc(tid).filter(c=>isPK(c)):[];
-  sel.innerHTML='<option value="">— PK колонка —</option>'+cols.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  if(cols.length===1){
+    // Авто-выбор единственного PK
+    sel.innerHTML='<option value="'+cols[0].id+'">'+esc(cols[0].name)+'</option>';
+    sel.value=cols[0].id;
+  }else{
+    sel.innerHTML='<option value="">— PK колонка —</option>'+cols.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  }
 }
 
 async function addRelFromModal(){
@@ -47,7 +53,8 @@ async function addRelFromModal(){
   const tgtTid=document.getElementById('rel-tgt-tbl')?.value;
   const tgtCid=document.getElementById('rel-tgt-col')?.value;
   if(!srcTid||!srcCid){toast('Выберите FK таблицу и FK колонку','err');return;}
-  if(!tgtTid||!tgtCid){toast('Выберите PK таблицу и PK колонку','err');return;}
+  if(!tgtTid){toast('Выберите PK таблицу','err');return;}
+  if(!tgtCid){toast('PK колонка не выбрана','err');return;}
   if(srcTid===tgtTid){toast('Нельзя связать таблицу саму с собой','err');return;}
   const col=S.columns.find(c=>String(c.id)===srcCid);
   if(!col){toast('Колонка не найдена','err');return;}
@@ -82,13 +89,20 @@ function reiLoadCols(selEl,colId){
   const tid=selEl.value;
   const col=S.columns.find(c=>String(c.id)===String(colId));
   const pks=tid?gc(tid).filter(c=>isPK(c)):[];
-  document.getElementById('rei-col').innerHTML='<option value="">— PK —</option>'+
-    pks.map(c=>`<option value="${c.id}"${String(c.id)===String(col?.fk_column_id)?' selected':''}>${esc(c.name)}</option>`).join('');
+  if(pks.length===1){
+    // Авто-выбор единственного PK
+    document.getElementById('rei-col').innerHTML='<option value="'+pks[0].id+'">'+esc(pks[0].name)+'</option>';
+    document.getElementById('rei-col').value=pks[0].id;
+  }else{
+    document.getElementById('rei-col').innerHTML='<option value="">— PK —</option>'+
+      pks.map(c=>`<option value="${c.id}"${String(c.id)===String(col?.fk_column_id)?' selected':''}>${esc(c.name)}</option>`).join('');
+  }
 }
 async function reiSave(colId,btn){
   const tblId=document.getElementById('rei-tbl')?.value;
   const pkcId=document.getElementById('rei-col')?.value;
-  if(!tblId||!pkcId){toast('Выберите таблицу и PK колонку','err');return;}
+  if(!tblId){toast('Выберите таблицу','err');return;}
+  if(!pkcId){toast('PK колонка не выбрана','err');return;}
   const col=S.columns.find(c=>String(c.id)===String(colId));
   if(!col)return;
   col.fk_table_id=tblId;col.fk_column_id=pkcId;
