@@ -154,6 +154,8 @@ function processRequest(action, payload) {
       // ── JSON export / import ──
       exportSchemaJson:      () => exportSchemaJson(payload),
       importSchemaJson:      () => importSchemaJson(payload),
+      exportSchemaSql:       () => exportSchemaSql(payload),
+      importSchemaSql:       () => importSchemaSql(payload),
       getSystemDump:         () => getSystemDump(payload),
 
       // ── Instruction ──

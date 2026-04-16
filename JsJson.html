@@ -381,3 +381,208 @@ function dlSysDump(){
   toast('Скачан','ok');
 }
 </script>
+<script>
+// ═══════════════════════════════════════════════════════════
+// SQL Import/Export — PostgreSQL, MSSQL, MySQL, SQLite
+// ═══════════════════════════════════════════════════════════
+let sqlTab='export', sqlData=null;
+
+function openSql(){
+  sqlData=null;
+  const title=S.schema?`🗄 SQL · ${S.schema.name}`:'🗄 SQL Импорт';
+  document.getElementById('sql-title').textContent=title;
+  // Hide export tab if no schema
+  document.querySelectorAll('.sql-tab').forEach(el=>{
+    const isExport=el.dataset.st==='export';
+    el.style.opacity=(isExport&&!S.schema)?'0.35':'1';
+    el.style.pointerEvents=(isExport&&!S.schema)?'none':'';
+    el.title=(isExport&&!S.schema)?'Выберите схему для экспорта':'';
+  });
+  switchSqlTab(S.schema?'export':'import');
+  showM('m-sql');
+}
+
+function switchSqlTab(t){
+  sqlTab=t;
+  document.querySelectorAll('.sql-tab').forEach(el=>el.classList.toggle('on',el.dataset.st===t));
+  if(t==='export')renderSqlExport();
+  else renderSqlImport();
+}
+
+// ── EXPORT tab ───────────────────────────────────────────────
+async function renderSqlExport(){
+  const b=document.getElementById('sql-tab-body');
+  b.innerHTML='<div style="text-align:center;padding:20px;color:var(--t2)">⏳ Загрузка…</div>';
+  try{
+    sqlData=await api('exportSchemaSql',{schema_id:S.schema.id});
+    const meta=[{l:'Таблиц',v:sqlData.meta.table_count},{l:'Колонок',v:sqlData.meta.column_count},{l:'Связей',v:sqlData.meta.relation_count}];
+    b.innerHTML=`
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:12px;flex-shrink:0">
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--accent)">📤 Экспорт SQL схемы</div>
+        <p class="sm" style="margin-bottom:10px">Генерация DDL скриптов для различных СУБД. Выберите диалект и скопируйте или скачайте результат.</p>
+        <div style="display:flex;gap:9px;flex-wrap:wrap;flex-shrink:0">
+          ${meta.map(m=>`<div style="padding:5px 14px;background:var(--s3);border:1px solid var(--border);border-radius:6px;text-align:center">
+            <div style="font-size:17px;font-weight:700;color:var(--accent)">${m.v}</div><div class="sm">${m.l}</div></div>`).join('')}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600">
+          <span>Диалект SQL:</span>
+          <select id="sql-dialect" onchange="renderSqlDialect()" style="padding:5px 10px;background:var(--s3);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:12px">
+            <option value="postgresql">PostgreSQL</option>
+            <option value="mssql">MS SQL Server</option>
+            <option value="mysql">MySQL / MariaDB</option>
+            <option value="sqlite">SQLite</option>
+          </select>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600">
+          <input type="checkbox" id="sql-drop" style="width:15px;height:15px;accent-color:var(--accent)" onchange="renderSqlDialect()"/> DROP TABLE IF EXISTS
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600">
+          <input type="checkbox" id="sql-fk" checked style="width:15px;height:15px;accent-color:var(--accent)" onchange="renderSqlDialect()"/> FOREIGN KEY constraints
+        </label>
+      </div>
+      <div id="sql-out" style="flex:1;min-height:200px"></div>
+      <div style="display:flex;gap:7px;flex-shrink:0">
+        <button onclick="copySqlExport()" style="flex:1;padding:8px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:12px">📋 Копировать SQL</button>
+        <button onclick="dlSql()" style="flex:1;padding:8px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-weight:600;font-size:12px">⬇ Скачать .sql</button>
+      </div>`;
+    renderSqlDialect();
+  }catch(e){b.innerHTML=`<div style="color:var(--red)">Ошибка: ${esc(e.message)}</div>`;}
+}
+
+function renderSqlDialect(){
+  const dialect=document.getElementById('sql-dialect').value;
+  const withDrop=document.getElementById('sql-drop').checked;
+  const withFk=document.getElementById('sql-fk').checked;
+  const out=document.getElementById('sql-out');
+  if(!out||!sqlData)return;
+  
+  const ddl=sqlData.dialects[dialect]||sqlData.dialects.postgresql;
+  let result=ddl;
+  
+  // Add DROP statements if requested
+  if(withDrop){
+    const dropStmts=sqlData.tables.map(t=>{
+      if(dialect==='mssql')return`IF OBJECT_ID('[${t.name}]', 'U') IS NOT NULL DROP TABLE [${t.name}];`;
+      if(dialect==='mysql')return`DROP TABLE IF EXISTS \`${t.name}\`;`;
+      if(dialect==='sqlite')return`DROP TABLE IF EXISTS "${t.name}";`;
+      return`DROP TABLE IF EXISTS "${t.name}";`;
+    }).join('\n');
+    result=dropStmts+'\n\n'+result;
+  }
+  
+  out.innerHTML=`<textarea readonly style="width:100%;height:300px;padding:10px;background:var(--json-bg);border:1px solid var(--border);color:var(--text);font-family:'Consolas','Monaco',monospace;font-size:11px;resize:none;border-radius:5px">${esc(result)}</textarea>`;
+}
+
+function copySqlExport(){
+  const txt=document.querySelector('#sql-out textarea');
+  if(!txt)return;
+  const t=txt.value;
+  (navigator.clipboard?.writeText(t)||Promise.reject())
+    .then(()=>toast('SQL скопирован','ok'))
+    .catch(()=>{const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Скопировано','ok');});
+}
+
+function dlSql(){
+  const txt=document.querySelector('#sql-out textarea');
+  if(!txt)return;
+  const dialect=document.getElementById('sql-dialect').value;
+  const n=(S.schema?.name||'schema').replace(/[^\w\u0400-\u04FF]/g,'_');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([txt.value],{type:'application/sql'}));
+  a.download=`${n}_${dialect}.sql`;document.body.appendChild(a);a.click();document.body.removeChild(a);
+  toast('Скачан','ok');
+}
+
+// ── IMPORT tab ───────────────────────────────────────────────
+function renderSqlImport(){
+  const b=document.getElementById('sql-tab-body');
+  b.innerHTML=`
+    <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:12px;flex-shrink:0">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--accent)">📥 Импорт из SQL DDL</div>
+      <p class="sm" style="margin-bottom:10px">Вставьте CREATE TABLE скрипт. Система попытается распарсить структуру и создать таблицы.</p>
+      <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+          <span>Диалект:</span>
+          <select id="imp-sql-dialect" style="padding:4px 8px;background:var(--s3);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:11px">
+            <option value="postgresql">PostgreSQL</option>
+            <option value="mssql">MS SQL Server</option>
+            <option value="mysql">MySQL / MariaDB</option>
+            <option value="sqlite">SQLite</option>
+            <option value="auto">Авто-определение</option>
+          </select>
+        </label>
+        <button onclick="document.getElementById('imp-sql-file').click()" style="padding:4px 11px;background:var(--s3);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:11px">📁 Загрузить .sql файл</button>
+        <input type="file" id="imp-sql-file" accept=".sql" style="display:none" onchange="loadSqlFile(event)">
+      </div>
+    </div>
+    <textarea id="imp-sql" class="ai-prompt-area" placeholder="Вставьте SQL DDL сюда...\n\nПример:\nCREATE TABLE users (\n  id SERIAL PRIMARY KEY,\n  name VARCHAR(255) NOT NULL,\n  email VARCHAR(255) UNIQUE\n);" style="flex:1;min-height:200px"></textarea>
+    <div style="background:#5b8dee11;border:1px solid #5b8dee44;border-radius:7px;padding:10px;flex-shrink:0">
+      <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:5px">💡 Поддерживаемые конструкции</div>
+      <ul style="font-size:11px;color:var(--t2);padding-left:18px;line-height:1.8">
+        <li>CREATE TABLE с колонками и типами данных</li>
+        <li>PRIMARY KEY, FOREIGN KEY, UNIQUE, NOT NULL</li>
+        <li>DEFAULT значения, CHECK ограничения</li>
+        <li>COMMENTS / описания колонок</li>
+      </ul>
+    </div>
+    <div style="display:flex;gap:7px;flex-shrink:0">
+      <button onclick="validateImportSql()" style="flex:1;padding:9px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-weight:600;font-size:12px">✓ Проверить SQL</button>
+      <button onclick="doImportSql()" style="flex:2;padding:9px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:12px">📥 Импортировать схему</button>
+    </div>
+    <div id="imp-sql-status"></div>
+  `;
+}
+
+function loadSqlFile(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    document.getElementById('imp-sql').value=ev.target.result;
+    toast('Файл загружен','ok');
+  };
+  reader.readAsText(file);
+}
+
+function validateImportSql(){
+  const raw=document.getElementById('imp-sql')?.value?.trim();
+  const st=document.getElementById('imp-sql-status');
+  if(!raw){st.innerHTML='<div style="color:var(--red);margin-top:8px;font-size:12px">⚠ Вставьте SQL</div>';return;}
+  
+  // Simple validation - count CREATE TABLE statements
+  const createCount=(raw.match(/CREATE\s+TABLE/ig)||[]).length;
+  if(createCount===0){
+    st.innerHTML='<div style="color:var(--red);margin-top:8px;font-size:12px">✗ Не найдено CREATE TABLE语句</div>';
+    return;
+  }
+  
+  st.innerHTML=`<div style="margin-top:8px;padding:8px 12px;background:#27ae6022;border:1px solid #27ae6066;border-radius:5px;font-size:12px;color:#60f0a0">
+    ✓ Найдено таблиц: <strong>${createCount}</strong>. Нажмите "Импортировать схему" для создания.
+  </div>`;
+}
+
+async function doImportSql(){
+  const raw=document.getElementById('imp-sql')?.value?.trim();
+  const dialect=document.getElementById('imp-sql-dialect').value;
+  if(!raw){toast('Вставьте SQL','err');return;}
+  
+  const st=document.getElementById('imp-sql-status');
+  st.innerHTML='<div style="margin-top:8px;color:var(--accent);font-size:12px"><span class="sync-spin">↻</span> Парсинг SQL…</div>';
+  setSyncState('syncing');
+  
+  try{
+    const r=await api('importSchemaSql',{sql:raw,dialect});
+    await loadAll();
+    inv();
+    selSchema(String(r.schema_id));
+    setSyncState('synced');
+    closeM('m-sql');
+    toast(`Схема «${r.schema_name}» импортирована: ${r.tables_count} таблиц`,'ok');
+  }catch(e){
+    setSyncState('error');
+    st.innerHTML=`<div style="color:var(--red);margin-top:8px;font-size:12px">✗ Ошибка: ${esc(e.message)}</div>`;
+    toast('Ошибка импорта: '+e.message,'err');
+  }
+}
+</script>
