@@ -98,9 +98,6 @@ input,select,textarea{font-family:inherit;outline:none}
   color:var(--t2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;white-space:nowrap;overflow:hidden}
 .sb-hdr .icon-btn{background:none;color:var(--t2);font-size:14px;padding:1px 5px;border-radius:4px;flex-shrink:0}
 .sb-hdr .icon-btn:hover{background:var(--s2);color:var(--text)}
-/* Sync progress bar at very top of page */
-#sync-progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:9999;
-  background:var(--accent);width:0%;pointer-events:none;transition:opacity .3s;opacity:0}
 #schema-tree{flex:1;overflow-y:auto;padding:5px}
 /* Tree nodes */
 .tnode{padding:4px 7px;border-radius:5px;cursor:pointer;font-size:12px;
@@ -270,13 +267,13 @@ input,select,textarea{font-family:inherit;outline:none}
 /* ════════════════════════ MISC ═════════════════════════════ */
 .sm{font-size:11px;color:var(--t2)}
 
-/* Sync badge states */
-#sync-badge.synced {border-color:var(--border)}
-#sync-badge.pending{border-color:var(--orange);background:#f39c1211}
-#sync-badge.syncing{border-color:var(--accent);background:#5b8dee11}
-#sync-badge.error  {border-color:var(--red);background:#e74c3c11}
+/* Sync button states */
+.sync-btn{transition:all .3s ease}
+.sync-btn.syncing svg{animation:spin-sync 1s linear infinite;stroke:var(--orange)}
+.sync-btn.synced svg{stroke:var(--green)}
+.sync-btn.error svg{stroke:var(--red)}
+
 @keyframes spin-sync{to{transform:rotate(360deg)}}
-.sync-spin{display:inline-block;animation:spin-sync .7s linear infinite}
 
 /* Table create modal – wide layout */
 #m-table .modal{min-width:760px;max-width:1000px;max-height:90vh;display:flex;flex-direction:column;padding:0;overflow:hidden}
@@ -376,44 +373,11 @@ input,select,textarea{font-family:inherit;outline:none}
 .bld-uni th:first-child,.bld-uni td:first-child{width:36px;padding:5px 6px}
 /* === Topbar right sync group === */
 #topbar-right{display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0}
-#sync-badge{
-  display:flex;align-items:center;gap:6px;
-  padding:4px 11px;border-radius:7px;
-  background:var(--s2);border:1px solid var(--border);
-  font-size:11px;flex-shrink:0;cursor:default;white-space:nowrap;
-  transition:border-color .2s,background .2s;min-width:170px;
-}
-#sync-badge.syncing{border-color:var(--accent)66}
-#sync-badge.error{border-color:var(--red)66}
-#sync-icon{font-size:13px;flex-shrink:0;width:14px;text-align:center}
-#sync-txt{color:var(--t2);font-size:11px;flex-shrink:0}
-/* Inline progress bar */
-#sync-bar-wrap{
-  flex:1;height:4px;background:var(--s3);
-  border-radius:2px;overflow:hidden;
-  min-width:50px;max-width:90px;
-  transition:opacity .3s;
-}
-#sync-bar{
-  height:100%;width:0%;
-  background:var(--accent);
-  border-radius:2px;
-  transition:width .4s ease;
-}
-#sync-badge.synced #sync-bar{background:var(--green)}
-#sync-badge.error  #sync-bar{background:var(--red)}
 /* JSON modal tabs */
 .json-tab{padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;
   color:var(--t2);border-bottom:2px solid transparent;transition:.1s;white-space:nowrap}
 .json-tab.on{color:var(--accent);border-bottom-color:var(--accent)}
 .json-tab:hover{color:var(--text)}
-/* Sync overlay animation */
-@keyframes sync-pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.sync-dot-anim{display:inline-flex;gap:3px;align-items:center}
-.sync-dot-anim span{width:4px;height:4px;border-radius:50%;background:var(--accent);
-  display:inline-block;animation:sync-pulse .9s ease-in-out infinite}
-.sync-dot-anim span:nth-child(2){animation-delay:.2s}
-.sync-dot-anim span:nth-child(3){animation-delay:.4s}
 /* Builder bulk actions bar */
 #bld-bulk-bar{display:none;align-items:center;gap:8px;padding:8px 10px;
   background:var(--s3);border:1px solid var(--accent);border-radius:7px;margin-bottom:10px;flex-wrap:wrap}
@@ -434,13 +398,6 @@ input,select,textarea{font-family:inherit;outline:none}
 .table-pending-overlay{position:absolute;inset:0;background:rgba(0,0,0,.18);
   display:flex;align-items:center;justify-content:center;border-radius:7px;
   pointer-events:none;z-index:50}
-/* Sync badge states */
-#sync-badge.synced {border-color:var(--border)}
-#sync-badge.pending{border-color:var(--orange);background:#f39c1211}
-#sync-badge.syncing{border-color:var(--accent);background:#5b8dee11}
-#sync-badge.error  {border-color:var(--red);background:#e74c3c11}
-@keyframes spin-sync{to{transform:rotate(360deg)}}
-.sync-spin{display:inline-block;animation:spin-sync .7s linear infinite}
 /* Table create modal – wide layout */
 #m-table .modal{min-width:760px;max-width:1000px;max-height:90vh;display:flex;flex-direction:column;padding:0;overflow:hidden}
 #m-table .modal-header{padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0}

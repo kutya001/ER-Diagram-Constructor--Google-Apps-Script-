@@ -8,7 +8,6 @@
 </head>
 <body data-theme="dark">
 
-<div id="sync-progress" style="opacity:0"></div>
 <div id="loader"><div class="spin"></div><div class="sm">Инициализация…</div></div>
 <div id="toasts"></div>
 <div id="ctx">
@@ -65,12 +64,12 @@
   </div>
   <button class="tb" onclick="togglePanel()">☰</button>
   <div id="topbar-right">
-    <div id="sync-badge" title="Статус синхронизации">
-      <span id="sync-icon">✓</span>
-      <div id="sync-bar-wrap"><div id="sync-bar"></div></div>
-      <span id="sync-txt">Синхронизировано</span>
-    </div>
-    <button id="btn-sync" class="tb" onclick="syncNow()" title="Синхронизировать сейчас" style="padding:4px 8px">🔄</button>
+    <button id="btn-sync" class="tb sync-btn" onclick="syncNow()" title="Синхронизировать данные">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline>
+        <path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"></path>
+      </svg>
+    </button>
   </div>
 </div>
 

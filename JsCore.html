@@ -31,18 +31,15 @@ const S = {
 };
 
 // ═══════════════════════════════════════════════════════════
-// SYNC ENGINE  — smart queue, debounced, visual status + progress bar
+// SYNC ENGINE  — smart queue, debounced
 // ═══════════════════════════════════════════════════════════
 const SQ = [];        // sync queue [{action, payload, resolve, reject}]
 let syncRunning=false,syncErrCount=0;
 let syncTO=null;
-let syncProgressTO=null;
-let _syncAnim=null;
 
 function queueSync(action, payload){
   return new Promise((resolve,reject)=>{
     SQ.push({action,payload,resolve,reject});
-    setSyncState('pending');
     clearTimeout(syncTO);
     syncTO=setTimeout(flushSync, 400);
   });
@@ -50,7 +47,7 @@ function queueSync(action, payload){
 
 async function flushSync(){
   if(syncRunning||!SQ.length){return;}
-  syncRunning=true;setSyncState('syncing');
+  syncRunning=true;
   const batch=[...SQ]; SQ.length=0;
   try{
     const reqs=batch.map(b=>({action:b.action,payload:b.payload}));
@@ -61,9 +58,9 @@ async function flushSync(){
         .processBatch(reqs);
     });
     batch.forEach(b=>b.resolve&&b.resolve());
-    syncErrCount=0;setSyncState('synced');
+    syncErrCount=0;
   }catch(e){
-    syncErrCount++;setSyncState('error');
+    syncErrCount++;
     batch.forEach(b=>SQ.push(b));
     if(syncErrCount<3){syncTO=setTimeout(flushSync,2000);}
     else{
@@ -80,9 +77,27 @@ async function flushSync(){
 }
 
 async function syncNow(){
+  const btn = document.getElementById('btn-sync');
+  if(!btn) return;
+  
+  // Start syncing - yellow + spinning
+  btn.classList.add('syncing');
+  btn.classList.remove('synced', 'error');
+  
   clearTimeout(syncTO);
   await flushSync();
-  if(!SQ.length)toast('Синхронизировано','ok');
+  
+  // Check result
+  if(syncErrCount === 0 && !SQ.length){
+    // Success - green
+    btn.classList.remove('syncing');
+    btn.classList.add('synced');
+    toast('Синхронизировано','ok');
+  } else {
+    // Error - red
+    btn.classList.remove('syncing');
+    btn.classList.add('error');
+  }
 }
 
 /** Повторить сохранение локальных действий, которые не удалось отправить */
@@ -105,73 +120,6 @@ async function retryFailedSync(){
     toast('Данные успешно синхронизированы','ok');
   }catch(e){
     toast('Повторная ошибка: '+e.message,'err');
-  }
-}
-
-function setSyncState(s){
-  const badge  = document.getElementById('sync-badge');
-  const icon   = document.getElementById('sync-icon');
-  const txt    = document.getElementById('sync-txt');
-  const barWrap= document.getElementById('sync-bar-wrap');
-  const bar    = document.getElementById('sync-bar');
-  const topBar = document.getElementById('sync-progress');
-  if(!badge) return;
-  badge.className = s;
-  clearTimeout(syncProgressTO);
-  if(_syncAnim) clearTimeout(_syncAnim);
-
-  // Show bar only while active
-  const active = s==='pending'||s==='syncing';
-  if(barWrap) barWrap.style.display = active ? '' : 'none';
-
-  if(s === 'pending'){
-    icon.innerHTML = '<span class="sync-dot-anim"><span></span><span></span><span></span></span>';
-    txt.textContent = 'Ожидание…'; txt.style.color = 'var(--orange)';
-    if(bar){ bar.style.transition='none'; bar.style.width='0%'; bar.style.opacity='1'; bar.style.background='var(--orange)';
-      requestAnimationFrame(()=>{bar.style.transition='width .4s ease'; bar.style.width='25%';}); }
-    if(topBar){ topBar.style.opacity='1'; topBar.style.width='25%'; topBar.style.transition='width .4s ease'; }
-
-  } else if(s === 'syncing'){
-    icon.innerHTML = '<span class="sync-spin" style="display:inline-block;font-size:14px;line-height:1">↻</span>';
-    txt.textContent = 'Синхронизация…'; txt.style.color = 'var(--accent)';
-    if(bar){ bar.style.transition='width 1.5s ease'; bar.style.opacity='1'; bar.style.background='var(--accent)';
-      requestAnimationFrame(()=>{ bar.style.width='75%'; }); }
-    if(topBar){ topBar.style.opacity='1'; topBar.style.transition='width 1.5s ease';
-      requestAnimationFrame(()=>{ topBar.style.width='75%'; }); }
-    // Add intermediate animation steps for better visibility
-    _syncAnim = setTimeout(()=>{
-      if(bar) bar.style.width='85%';
-      if(topBar) topBar.style.width='85%';
-      _syncAnim = setTimeout(()=>{
-        if(bar) bar.style.width='90%';
-        if(topBar) topBar.style.width='90%';
-      }, 800);
-    }, 1000);
-
-  } else if(s === 'synced'){
-    icon.innerHTML = '<span style="color:var(--green);font-size:13px">✓</span>';
-    txt.textContent = 'Синхронизировано'; txt.style.color = 'var(--t2)';
-    // Flash green to 100% then hide
-    if(bar){ bar.style.transition='width .2s ease'; bar.style.width='100%'; bar.style.background='var(--green)'; }
-    if(topBar){ topBar.style.transition='width .2s ease'; topBar.style.width='100%'; }
-    // Increased delay to make animation more visible
-    syncProgressTO = setTimeout(()=>{
-      if(barWrap) barWrap.style.display='none';
-      if(bar){ bar.style.transition='none'; bar.style.width='0%'; }
-      if(topBar){ topBar.style.transition='opacity .4s'; topBar.style.opacity='0';
-        setTimeout(()=>{ topBar.style.width='0%'; topBar.style.transition='none'; }, 420); }
-    }, 1500); // Increased from 700ms to 1500ms
-
-  } else { // error
-    icon.innerHTML = '<span style="color:var(--red)">✗</span>';
-    txt.textContent = 'Ошибка синхр.'; txt.style.color = 'var(--red)';
-    if(bar){ bar.style.transition='width .3s'; bar.style.width='100%'; bar.style.background='var(--red)'; }
-    if(topBar){ topBar.style.transition='opacity .3s'; topBar.style.opacity='0'; }
-    // Increased delay to make animation more visible
-    syncProgressTO = setTimeout(()=>{
-      if(barWrap) barWrap.style.display='none';
-      if(bar){ bar.style.transition='none'; bar.style.width='0%'; }
-    }, 2500); // Increased from 1500ms to 2500ms
   }
 }
 
