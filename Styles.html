@@ -268,12 +268,18 @@ input,select,textarea{font-family:inherit;outline:none}
 .sm{font-size:11px;color:var(--t2)}
 
 /* Sync button states */
-.sync-btn{transition:all .3s ease}
-.sync-btn.syncing svg{animation:spin-sync 1s linear infinite;stroke:var(--orange)}
+.sync-btn{transition:all .3s ease;display:inline-flex;align-items:center;justify-content:center}
+.sync-btn.syncing{background:var(--orange)22 !important;border-color:var(--orange) !important}
+.sync-btn.syncing svg{animation:spin-sync 1s linear infinite;stroke:var(--orange);transform-origin:center}
+.sync-btn.synced{background:var(--green)22 !important;border-color:var(--green) !important}
 .sync-btn.synced svg{stroke:var(--green)}
+.sync-btn.error{background:var(--red)22 !important;border-color:var(--red) !important}
 .sync-btn.error svg{stroke:var(--red)}
 
 @keyframes spin-sync{to{transform:rotate(360deg)}}
+
+/* Старый класс для совместимости */
+.sync-spin{display:inline-block;animation:spin-sync 1s linear infinite}
 
 /* Table create modal – wide layout */
 #m-table .modal{min-width:760px;max-width:1000px;max-height:90vh;display:flex;flex-direction:column;padding:0;overflow:hidden}
