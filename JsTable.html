@@ -167,6 +167,7 @@ async function submitTable(){
     S.table=tempTable;
     closeM('m-table');R();MR();renderPanel();
     toast('Таблица добавлена (синхронизация…)','inf');
+    setSyncState('syncing');
     
     // Save original position to restore if needed
     const originalPos_x = tempTable.pos_x;
@@ -248,7 +249,7 @@ async function submitTable(){
       R();
       MR();
       renderPanel();
-    }catch(e){toast('Ошибка сохранения: '+e.message,'err');setSyncState('error');}
+    }catch(e){toast('Ошибка сохранения: '+e.message,'err');setSyncState('error');R();MR();renderPanel();}
   }else{
     // Edit mode — just update header, columns managed separately
     closeM('m-table');
@@ -313,14 +314,15 @@ async function cpTable(){
 async function delTable(){
   if(!S.table)return;
   conf(`Удалить "${S.table.name}"?`,'Все колонки тоже будут удалены.',async()=>{
+    setSyncState('syncing');
     try{
       const tid=String(S.table.id);
       if(!String(tid).startsWith('tmp_'))await api('deleteTable',{id:tid});
       S.columns.filter(c=>String(c.table_id)===tid).forEach(c=>inv(c.table_id));
       S.tables=S.tables.filter(t=>String(t.id)!==tid);
       S.columns=S.columns.filter(c=>String(c.table_id)!==tid);
-      S.table=null;toast('Таблица удалена','ok');R();MR();renderPanel();
-    }catch(e){toast('Ошибка: '+e.message,'err');}
+      S.table=null;setSyncState('synced');toast('Таблица удалена','ok');R();MR();renderPanel();
+    }catch(e){setSyncState('error');toast('Ошибка: '+e.message,'err');R();MR();renderPanel();}
   });
 }
 </script>

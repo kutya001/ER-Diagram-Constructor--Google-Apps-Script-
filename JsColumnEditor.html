@@ -85,6 +85,7 @@ async function submitCol(){
     if(!fkc){toast('PK колонка не выбрана (должна быть ровно одна PK в таблице)','err');return;}
   }
   closeM('m-col');
+  setSyncState('syncing');
   try{
     if(colMode==='create'){
       const col=await api('createColumn',{table_id:S.table.id,name,description:desc,type_id:typeId,is_pk:pk,is_fk:fk,fk_table_id:fkt,fk_column_id:fkc});
@@ -94,18 +95,20 @@ async function submitCol(){
       const i=S.columns.findIndex(c=>String(c.id)===String(editCid));
       if(i>=0){S.columns[i]={...S.columns[i],...u};inv(S.columns[i].table_id);}
     }
+    setSyncState('synced');
     toast('Колонка сохранена','ok');R();renderPanel();
-  }catch(e){toast('Ошибка: '+e.message,'err');}
+  }catch(e){setSyncState('error');toast('Ошибка: '+e.message,'err');R();renderPanel();}
 }
 async function delCol(cid){
   conf('Удалить колонку?','',async()=>{
+    setSyncState('syncing');
     try{
       const col=S.columns.find(c=>String(c.id)===String(cid));
       if(!String(cid).startsWith('tmpcol_'))await api('deleteColumn',{id:cid});
       if(col)inv(col.table_id);
       S.columns=S.columns.filter(c=>String(c.id)!==String(cid));
-      toast('Удалена','ok');R();renderPanel();
-    }catch(e){toast('Ошибка: '+e.message,'err');}
+      setSyncState('synced');toast('Удалена','ok');R();renderPanel();
+    }catch(e){setSyncState('error');toast('Ошибка: '+e.message,'err');R();renderPanel();}
   });
 }
 
@@ -125,9 +128,10 @@ async function createRel(src,pk){
   // Update FK column
   col.is_fk=true;col.fk_table_id=pk.tableId;col.fk_column_id=pk.columnId;
   inv(col.table_id);
+  setSyncState('syncing');
   api('createRelation',{fk_column_id:src.columnId,pk_table_id:pk.tableId,pk_column_id:pk.columnId})
-    .catch(e=>toast('Ошибка: '+e.message,'err'));
-  toast('Связь создана ✓','ok');R();renderPanel();renderSbRight();
+    .then(()=>{setSyncState('synced');toast('Связь создана ✓','ok');R();renderPanel();renderSbRight();})
+    .catch(e=>{setSyncState('error');toast('Ошибка: '+e.message,'err');});
 }
 
 // ═══════════════════════════════════════════════════════════

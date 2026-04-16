@@ -77,36 +77,32 @@ async function flushSync(){
 }
 
 async function syncNow(){
-  const btn = document.getElementById('btn-sync');
-  if(!btn) return;
-  
   // Start syncing - yellow + spinning
-  btn.classList.add('syncing');
-  btn.classList.remove('synced', 'error');
-  btn.title = 'Синхронизация...';
+  setSyncState('syncing');
   
   clearTimeout(syncTO);
   await flushSync();
   
   // Check result
   if(syncErrCount === 0 && !SQ.length){
-    // Success - green
-    btn.classList.remove('syncing');
-    btn.classList.add('synced');
-    btn.title = 'Синхронизировано';
+    // Success - green (will auto-reset after 3 seconds)
+    setSyncState('synced');
     toast('Синхронизировано','ok');
   } else {
     // Error - red
-    btn.classList.remove('syncing');
-    btn.classList.add('error');
-    btn.title = 'Ошибка синхронизации';
+    setSyncState('error');
+    toast('Ошибка синхронизации','err');
   }
 }
 
 /** Установить состояние кнопки синхронизации */
+let syncResetTimer = null;
 function setSyncState(state){
   const btn = document.getElementById('btn-sync');
   if(!btn) return;
+  
+  // Очищаем предыдущий таймер сброса
+  if(syncResetTimer) clearTimeout(syncResetTimer);
   
   btn.classList.remove('syncing', 'synced', 'error');
   
@@ -116,12 +112,20 @@ function setSyncState(state){
   } else if(state === 'synced'){
     btn.classList.add('synced');
     btn.title = 'Синхронизировано';
+    // Возврат к нормальному состоянию через 3 секунды
+    syncResetTimer = setTimeout(() => {
+      btn.classList.remove('synced');
+      btn.title = 'Синхронизировать данные';
+    }, 3000);
   } else if(state === 'error'){
     btn.classList.add('error');
     btn.title = 'Ошибка синхронизации';
   } else if(state === 'pending'){
     // Ожидание - оставляем без класса, но можно добавить индикатор
     btn.title = 'Ожидание синхронизации...';
+  } else {
+    // Нормальное состояние
+    btn.title = 'Синхронизировать данные';
   }
 }
 
