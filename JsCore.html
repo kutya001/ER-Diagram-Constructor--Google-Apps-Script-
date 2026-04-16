@@ -83,6 +83,7 @@ async function syncNow(){
   // Start syncing - yellow + spinning
   btn.classList.add('syncing');
   btn.classList.remove('synced', 'error');
+  btn.title = 'Синхронизация...';
   
   clearTimeout(syncTO);
   await flushSync();
@@ -92,11 +93,35 @@ async function syncNow(){
     // Success - green
     btn.classList.remove('syncing');
     btn.classList.add('synced');
+    btn.title = 'Синхронизировано';
     toast('Синхронизировано','ok');
   } else {
     // Error - red
     btn.classList.remove('syncing');
     btn.classList.add('error');
+    btn.title = 'Ошибка синхронизации';
+  }
+}
+
+/** Установить состояние кнопки синхронизации */
+function setSyncState(state){
+  const btn = document.getElementById('btn-sync');
+  if(!btn) return;
+  
+  btn.classList.remove('syncing', 'synced', 'error');
+  
+  if(state === 'syncing'){
+    btn.classList.add('syncing');
+    btn.title = 'Синхронизация...';
+  } else if(state === 'synced'){
+    btn.classList.add('synced');
+    btn.title = 'Синхронизировано';
+  } else if(state === 'error'){
+    btn.classList.add('error');
+    btn.title = 'Ошибка синхронизации';
+  } else if(state === 'pending'){
+    // Ожидание - оставляем без класса, но можно добавить индикатор
+    btn.title = 'Ожидание синхронизации...';
   }
 }
 
