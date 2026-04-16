@@ -261,7 +261,7 @@
     <input type="hidden" id="mc-fk"/>
     <div id="fk-sec" style="display:none">
       <div class="fg"><label>Таблица (PK)</label><select id="mc-fkt" onchange="loadFkCols()"></select></div>
-      <div class="fg"><label>Колонка (PK)</label><select id="mc-fkc"></select></div>
+      <div class="fg" id="fkc-fg" style="display:none"><label>Колонка (PK)</label><select id="mc-fkc"></select></div>
     </div>
     <div class="mfooter"><button class="cancel" onclick="closeM('m-col')">Отмена</button><button class="confirm" onclick="submitCol()">Сохранить</button></div>
   </div>
