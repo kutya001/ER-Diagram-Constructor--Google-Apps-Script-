@@ -241,7 +241,6 @@ async function doImportJson(){
   if(!j.schema||!Array.isArray(j.tables)){toast('Неверный формат JSON','err');return;}
   const st=document.getElementById('imp-status');
   st.innerHTML='<div style="margin-top:8px;color:var(--accent);font-size:12px"><span class="sync-spin">↻</span> Импорт схемы…</div>';
-  setSyncState('syncing');
   try{
     const r=await api('importSchemaJson',{json:j,overwrite});
     // Reload all data
@@ -249,11 +248,9 @@ async function doImportJson(){
     inv();
     // Select new schema
     selSchema(String(r.schema_id));
-    setSyncState('synced');
     closeM('m-json');
     toast(`Схема «${r.schema_name}» импортирована: ${r.tables_count} таблиц`,'ok');
   }catch(e){
-    setSyncState('error');
     st.innerHTML=`<div style="color:var(--red);margin-top:8px;font-size:12px">✗ Ошибка: ${esc(e.message)}</div>`;
     toast('Ошибка импорта: '+e.message,'err');
   }
@@ -569,18 +566,14 @@ async function doImportSql(){
   
   const st=document.getElementById('imp-sql-status');
   st.innerHTML='<div style="margin-top:8px;color:var(--accent);font-size:12px"><span class="sync-spin">↻</span> Парсинг SQL…</div>';
-  setSyncState('syncing');
-  
   try{
     const r=await api('importSchemaSql',{sql:raw,dialect});
     await loadAll();
     inv();
     selSchema(String(r.schema_id));
-    setSyncState('synced');
     closeM('m-sql');
     toast(`Схема «${r.schema_name}» импортирована: ${r.tables_count} таблиц`,'ok');
   }catch(e){
-    setSyncState('error');
     st.innerHTML=`<div style="color:var(--red);margin-top:8px;font-size:12px">✗ Ошибка: ${esc(e.message)}</div>`;
     toast('Ошибка импорта: '+e.message,'err');
   }

@@ -67,15 +67,21 @@ async function flushSync(){
   const batch=[...SQ]; SQ.length=0;
   try{
     const reqs=batch.map(b=>({action:b.action,payload:b.payload}));
-    await new Promise((res,rej)=>{
+    const results = await new Promise((res,rej)=>{
       google.script.run
         .withSuccessHandler(r=>r.ok?res(r.data):rej(new Error(r.error)))
         .withFailureHandler(e=>rej(new Error(e.message||String(e))))
         .processBatch(reqs);
     });
-    batch.forEach(b=>{
-      logSync(b.action,true,JSON.stringify(b.payload).substring(0,120));
-      b.resolve&&b.resolve();
+    batch.forEach((b,i)=>{
+      const resultObj = results[i];
+      if(resultObj && resultObj.ok === false) {
+        logSync(b.action, false, resultObj.error);
+        b.reject && b.reject(new Error(resultObj.error));
+      } else {
+        logSync(b.action,true,JSON.stringify(b.payload).substring(0,120));
+        b.resolve&&b.resolve(resultObj ? resultObj.data : undefined);
+      }
     });
     syncErrCount=0;
     if(!SQ.length)setSyncState('synced');
@@ -215,12 +221,20 @@ function MR(){if(mrAF)return;mrAF=true;requestAnimationFrame(()=>{mrAF=false;min
 // ═══════════════════════════════════════════════════════════
 // API
 // ═══════════════════════════════════════════════════════════
-const api=(action,p={})=>new Promise((res,rej)=>{
-  google.script.run
-    .withSuccessHandler(r=>r.ok?res(r.data):rej(new Error(r.error)))
-    .withFailureHandler(e=>rej(new Error(e.message||String(e))))
-    .processRequest(action,p);
-});
+const api=(action,p={})=>{
+  const readOnly = /^(get|list|export|analyse)/.test(action);
+  if (readOnly) {
+    return new Promise((res,rej)=>{
+      google.script.run
+        .withSuccessHandler(r=>r.ok?res(r.data):rej(new Error(r.error)))
+        .withFailureHandler(e=>rej(new Error(e.message||String(e))))
+        .processRequest(action,p);
+    });
+  } else {
+    // Smart Sync: automatically queue all mutations
+    return queueSync(action, p);
+  }
+};
 const apiBatch=reqs=>new Promise((res,rej)=>{
   google.script.run
     .withSuccessHandler(r=>r.ok?res(r.data):rej(new Error(r.error)))

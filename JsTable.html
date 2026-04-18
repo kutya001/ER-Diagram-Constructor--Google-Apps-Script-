@@ -171,7 +171,6 @@ async function submitTable(){
     S.table=tempTable;
     closeM('m-table');R();MR();renderPanel();
     toast('Таблица добавлена (синхронизация…)','inf');
-    setSyncState('syncing');
     
     // Save original position to restore if needed
     const originalPos_x = tempTable.pos_x;
@@ -243,17 +242,14 @@ async function submitTable(){
       
       // Force rebuild column cache by calling gc() which will re-filter S.columns
       const finalCols = gc(res.table.id);
-      console.log('Final columns for table:', res.table.id, finalCols);
-      console.log('S.columns count:', S.columns.length, 'filtered count:', S.columns.filter(c=>String(c.table_id)===String(res.table.id)).length);
       
-      setSyncState('synced');
       toast(`Таблица «${name}» сохранена, ${finalCols.length} столбцов`,'ok');
       
       // Re-render everything with fresh data
       R();
       MR();
       renderPanel();
-    }catch(e){toast('Ошибка сохранения: '+e.message,'err');setSyncState('error');R();MR();renderPanel();}
+    }catch(e){toast('Ошибка сохранения: '+e.message,'err');R();MR();renderPanel();}
   }else{
     // Edit mode — just update header, columns managed separately
     closeM('m-table');
@@ -282,7 +278,6 @@ async function cpTable(){
   inv(tempId);
   S.table=tempTable;
   R();MR();renderPanel();
-  setSyncState('pending');
   toast('Создание копии…','inf');
   
   // Save original position
@@ -304,29 +299,26 @@ async function cpTable(){
     S.tables.push(preservedTable);
     nc.forEach(c=>{S.columns.push(c);inv(c.table_id);});
     S.table=preservedTable;
-    setSyncState('synced');
     toast('Таблица скопирована','ok');R();MR();renderPanel();
   }catch(e){
     // Roll back
     S.tables=S.tables.filter(t=>t.id!==tempId);
     S.columns=S.columns.filter(c=>c.table_id!==tempId);
     inv(tempId);S.table=src;
-    setSyncState('error');
     toast('Ошибка копирования: '+e.message,'err');R();MR();renderPanel();
   }
 }
 async function delTable(){
   if(!S.table)return;
   conf(`Удалить "${S.table.name}"?`,'Все колонки тоже будут удалены.',async()=>{
-    setSyncState('syncing');
     try{
       const tid=String(S.table.id);
       if(!String(tid).startsWith('tmp_'))await api('deleteTable',{id:tid});
       S.columns.filter(c=>String(c.table_id)===tid).forEach(c=>inv(c.table_id));
       S.tables=S.tables.filter(t=>String(t.id)!==tid);
       S.columns=S.columns.filter(c=>String(c.table_id)!==tid);
-      S.table=null;setSyncState('synced');toast('Таблица удалена','ok');R();MR();renderPanel();
-    }catch(e){setSyncState('error');toast('Ошибка: '+e.message,'err');R();MR();renderPanel();}
+      S.table=null;toast('Таблица удалена','ok');R();MR();renderPanel();
+    }catch(e){toast('Ошибка: '+e.message,'err');R();MR();renderPanel();}
   });
 }
 </script>
