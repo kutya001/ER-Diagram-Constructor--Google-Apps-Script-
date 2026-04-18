@@ -160,10 +160,12 @@ function hitFK(wp){
     const cols=gc(t.id);
     for(let i=0;i<cols.length;i++){
       const c=cols[i];
-      // Strictly: only FK-typed columns can start a relation
       if(!isFK(c))continue;
-      const cx=(t.pos_x||100)+TW-8,cy=(t.pos_y||100)+TH+i*CH+CH/2;
-      if(Math.hypot(wp.x-cx,wp.y-cy)<8)return{tableId:t.id,columnId:c.id,idx:i};
+      const x=(t.pos_x||100), y=(t.pos_y||100)+TH+i*CH+CH/2;
+      // Check right side
+      if(Math.hypot(wp.x-(x+TW-8),wp.y-y)<8) return{tableId:t.id,columnId:c.id,idx:i,side:'R'};
+      // Check left side
+      if(Math.hypot(wp.x-(x+8),wp.y-y)<8) return{tableId:t.id,columnId:c.id,idx:i,side:'L'};
     }
   }return null;
 }
@@ -204,7 +206,18 @@ function drawEmpty(){ctx.fillStyle='rgba(128,128,128,.18)';ctx.font='15px Segoe 
 function drawRelDraft(){
   const st=S.tables.find(t=>String(t.id)===String(relSrc.tableId));if(!st)return;
   const cols=gc(st.id),i=cols.findIndex(c=>String(c.id)===String(relSrc.columnId));
-  const sp=w2s((st.pos_x||100)+TW,(st.pos_y||100)+TH+i*CH+CH/2);
+  
+  // Decide start side based on mouse position relative to table
+  const sxL=(st.pos_x||100), sxR=sxL+TW;
+  const sy=(st.pos_y||100)+TH+i*CH+CH/2;
+  const wp=s2w(relPos.x, relPos.y);
+  
+  let sx=sxR;
+  if(wp.x < sxL) sx=sxL;
+  else if(wp.x > sxR) sx=sxR;
+  else sx = (Math.abs(wp.x-sxL) < Math.abs(wp.x-sxR)) ? sxL : sxR;
+
+  const sp=w2s(sx,sy);
   ctx.save();ctx.strokeStyle=C.lh;ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
   ctx.beginPath();ctx.moveTo(sp.x,sp.y);ctx.lineTo(relPos.x,relPos.y);ctx.stroke();
   ctx.setLineDash([]);ctx.restore();
@@ -219,10 +232,24 @@ function drawRels(){
     const sc2=gc(st.id),tc=gc(tt.id);
     const si=sc2.findIndex(c=>String(c.id)===String(col.id));
     const ti=tc.findIndex(c=>String(c.id)===String(col.fk_column_id));
-    const sx=(st.pos_x||100)+TW,sy=(st.pos_y||100)+TH+si*CH+CH/2;
-    const tx=(tt.pos_x||100),   ty=(tt.pos_y||100)+TH+Math.max(0,ti)*CH+CH/2;
+    
+    // Dynamic anchor point selection
+    const sxL=(st.pos_x||100), sxR=sxL+TW;
+    const txL=(tt.pos_x||100), txR=txL+TW;
+    const sy=(st.pos_y||100)+TH+si*CH+CH/2;
+    const ty=(tt.pos_y||100)+TH+Math.max(0,ti)*CH+CH/2;
+    
+    let sx, tx, dirS=1, dirT=-1;
+    if(sxR < txL){ sx=sxR; tx=txL; dirS=1; dirT=-1; }
+    else if(sxL > txR){ sx=sxL; tx=txR; dirS=-1; dirT=1; }
+    else {
+      // Overlap: connect nearest edges
+      if(Math.abs(sxR-txL) < Math.abs(sxL-txR)){ sx=sxR; tx=txL; dirS=1; dirT=-1; }
+      else { sx=sxL; tx=txR; dirS=-1; dirT=1; }
+    }
+    
     const sp=w2s(sx,sy),tp2=w2s(tx,ty);
-    const dx=Math.abs(tp2.x-sp.x)*.5;
+    const dx=Math.max(30, Math.abs(tp2.x-sp.x)*.5);
 
     const isHov=hovRel&&String(hovRel.id)===String(col.id);
     const isSel=selRel&&String(selRel.id)===String(col.id);
@@ -232,11 +259,29 @@ function drawRels(){
     ctx.save();
     if(isSel){ctx.shadowColor=C.lh;ctx.shadowBlur=8;}
     ctx.strokeStyle=lineCol;ctx.lineWidth=lineW;
-    ctx.beginPath();ctx.moveTo(sp.x,sp.y);ctx.bezierCurveTo(sp.x+dx,sp.y,tp2.x-dx,tp2.y,tp2.x,tp2.y);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(sp.x,sp.y);
+    ctx.bezierCurveTo(sp.x+dx*dirS,sp.y,tp2.x+dx*dirT,tp2.y,tp2.x,tp2.y);
+    ctx.stroke();
+    
     ctx.shadowBlur=0;
-    const a=Math.atan2(tp2.y-sp.y,tp2.x-sp.x);
-    ctx.fillStyle=lineCol;ctx.beginPath();ctx.moveTo(tp2.x,tp2.y);ctx.lineTo(tp2.x-7*Math.cos(a-.4),tp2.y-7*Math.sin(a-.4));ctx.lineTo(tp2.x-7*Math.cos(a+.4),tp2.y-7*Math.sin(a+.4));ctx.closePath();ctx.fill();
-    ctx.strokeStyle=C.fk;ctx.lineWidth=lineW;ctx.beginPath();ctx.moveTo(sp.x+9*Math.cos(a+.35),sp.y+9*Math.sin(a+.35));ctx.lineTo(sp.x,sp.y);ctx.lineTo(sp.x+9*Math.cos(a-.35),sp.y+9*Math.sin(a-.35));ctx.stroke();
+    // Arrow at target
+    const a=Math.atan2(tp2.y-sp.y,tp2.x-sp.x); // approx angle for arrow
+    // Better: tangent angle at bezier end
+    const ta = Math.atan2(tp2.y - ty, tp2.x - (tx + dx*dirT/sc)); // wait, simplified below
+    
+    ctx.fillStyle=lineCol;ctx.beginPath();ctx.moveTo(tp2.x,tp2.y);
+    const arrA = dirT < 0 ? 0 : Math.PI; 
+    ctx.lineTo(tp2.x-7*Math.cos(arrA-.4),tp2.y-7*Math.sin(arrA-.4));
+    ctx.lineTo(tp2.x-7*Math.cos(arrA+.4),tp2.y-7*Math.sin(arrA+.4));
+    ctx.closePath();ctx.fill();
+    
+    // Circle/Fork at source
+    ctx.strokeStyle=C.fk;ctx.lineWidth=lineW;ctx.beginPath();
+    const srcA = dirS > 0 ? 0 : Math.PI;
+    ctx.moveTo(sp.x+9*Math.cos(srcA+.35),sp.y+9*Math.sin(srcA+.35));
+    ctx.lineTo(sp.x,sp.y);
+    ctx.lineTo(sp.x+9*Math.cos(srcA-.35),sp.y+9*Math.sin(srcA-.35));
+    ctx.stroke();
     ctx.restore();
   });
 }
@@ -253,12 +298,24 @@ function hitRel(wp){
     const sc2=gc(st.id),tc=gc(tt.id);
     const si=sc2.findIndex(c=>String(c.id)===String(col.id));
     const ti=tc.findIndex(c=>String(c.id)===String(col.fk_column_id));
-    const sx=(st.pos_x||100)+TW,sy=(st.pos_y||100)+TH+si*CH+CH/2;
-    const tx=(tt.pos_x||100),   ty=(tt.pos_y||100)+TH+Math.max(0,ti)*CH+CH/2;
-    const dx=Math.abs(tx-sx)*.5;
+    
+    const sxL=(st.pos_x||100), sxR=sxL+TW;
+    const txL=(tt.pos_x||100), txR=txL+TW;
+    const sy=(st.pos_y||100)+TH+si*CH+CH/2;
+    const ty=(tt.pos_y||100)+TH+Math.max(0,ti)*CH+CH/2;
+    
+    let sx, tx, dirS=1, dirT=-1;
+    if(sxR < txL){ sx=sxR; tx=txL; dirS=1; dirT=-1; }
+    else if(sxL > txR){ sx=sxL; tx=txR; dirS=-1; dirT=1; }
+    else {
+      if(Math.abs(sxR-txL) < Math.abs(sxL-txR)){ sx=sxR; tx=txL; dirS=1; dirT=-1; }
+      else { sx=sxL; tx=txR; dirS=-1; dirT=1; }
+    }
+    const dx=Math.max(30, Math.abs(tx-sx)*.5);
+    
     // Sample bezier at N points
     for(let t2=0;t2<=1;t2+=0.05){
-      const bx=Math.pow(1-t2,3)*sx+3*Math.pow(1-t2,2)*t2*(sx+dx)+3*(1-t2)*t2*t2*(tx-dx)+Math.pow(t2,3)*tx;
+      const bx=Math.pow(1-t2,3)*sx+3*Math.pow(1-t2,2)*t2*(sx+dx*dirS)+3*(1-t2)*t2*t2*(tx+dx*dirT)+Math.pow(t2,3)*tx;
       const by=Math.pow(1-t2,3)*sy+3*Math.pow(1-t2,2)*t2*sy+3*(1-t2)*t2*t2*ty+Math.pow(t2,3)*ty;
       if(Math.hypot(wp.x-bx,wp.y-by)<THRESH){
         return{...col, srcTable:st, tgtTable:tt};
@@ -369,15 +426,15 @@ function drawTable(t){
       const dtw=ctx.measureText(ct.designation).width;
       ctx.fillText(ct.designation,sp.x+sw-dtw-14*sc,cy+CH*sc/2+3*sc);
     }
-    // FK handle dot — only on FK-typed columns (they can start relations)
-    if(!pk){
-      const hx=sp.x+sw-8*sc,hy=cy+CH*sc/2;
-      if(fk){
+    // FK handle dots — on both sides
+    if(fk && !pk){
+      const hy=cy+CH*sc/2;
+      const hPoints = [sp.x+8*sc, sp.x+sw-8*sc]; // L and R
+      hPoints.forEach(hx=>{
         ctx.beginPath();ctx.arc(hx,hy,4.5*sc,0,Math.PI*2);
         ctx.fillStyle=C.fk+'cc';ctx.fill();
         ctx.strokeStyle=C.fk+'66';ctx.lineWidth=1;ctx.stroke();
-      }
-      // Non-FK non-PK: no visible handle (can't drag to create relation)
+      });
     }
     // Row separator
     if(i<cols.length-1){
