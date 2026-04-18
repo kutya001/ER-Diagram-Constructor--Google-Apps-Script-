@@ -49,65 +49,110 @@ function switchInstTab(t){
   }
 }
 
+function switchMiniTab(t){
+  const tabs = document.querySelectorAll('.mtab');
+  tabs.forEach(btn => btn.classList.remove('on'));
+  const activeBtn = document.querySelector(`.mtab[data-tb="\${t}"]`);
+  if(activeBtn) activeBtn.classList.add('on');
+  
+  const views = document.querySelectorAll('.mview');
+  views.forEach(v => v.style.display = 'none');
+  const activeView = document.getElementById(`minitab-\${t}`);
+  if(activeView) activeView.style.display = 'block';
+}
+
 function getGuideHTML(){
   return `
-    <div class="inst-card">
-      <h4>🎯 Основы управления</h4>
-      <ul>
-        <li><strong>Перемещение по холсту:</strong> зажмите ЛКМ на пустом месте и тяните.</li>
-        <li><strong>Масштаб (Zoom):</strong> крутите колесико мыши.</li>
-        <li><strong>Создать таблицу:</strong> ПКМ по пустому месту холста или кнопка "＋ Таблица".</li>
-        <li><strong>Выделить несколько таблиц:</strong> зажмите <code>Ctrl</code> (или <code>Cmd</code>) и кликайте по нужным карточкам таблиц. Вы можете перемещать их группой.</li>
-      </ul>
+    <div style="display:flex;gap:8px;margin-bottom:15px;border-bottom:1px solid var(--border);padding-bottom:10px;overflow-x:auto">
+      <button class="mtab on" data-tb="roadmap" onclick="switchMiniTab('roadmap')">🗺 Роудмап</button>
+      <button class="mtab" data-tb="basics" onclick="switchMiniTab('basics')">🎯 База</button>
+      <button class="mtab" data-tb="rels" onclick="switchMiniTab('rels')">🔗 Связи</button>
+      <button class="mtab" data-tb="sync" onclick="switchMiniTab('sync')">⚙️ Синхронизация</button>
+      <button class="mtab" data-tb="ai" onclick="switchMiniTab('ai')">🤖 ИИ Промпты</button>
     </div>
     
-    <div class="inst-card">
-      <h4>🔗 Как создавать связи (FK → PK)</h4>
-      <div style="background:var(--bg);padding:20px;border-radius:8px;margin:10px 0;display:flex;align-items:center;justify-content:center;gap:30px;min-height:120px;overflow:hidden;position:relative;border:1px dashed var(--border)">
-        
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;width:140px;box-shadow:var(--shadow)">
-          <div style="padding:6px;font-size:11px;font-weight:700;border-bottom:1px solid var(--border);background:var(--s2)">Таблица А (FK)</div>
-          <div style="padding:6px;font-size:10px;display:flex;justify-content:space-between;align-items:center">
-             <span>user_id</span>
-             <span class="fk-drag-demo" style="width:10px;height:10px;background:var(--fk);border-radius:50%;display:inline-block;box-shadow:0 0 6px var(--fk)"></span>
-          </div>
-        </div>
-
-        <svg style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none">
-          <path class="demo-path" d="M 195 65 C 230 65, 220 65, 260 65" fill="none" stroke="var(--fk)" stroke-width="2" stroke-dasharray="4,4" />
-          <circle class="demo-cursor" cx="195" cy="65" r="5" fill="#fff" stroke="var(--fk)" stroke-width="2" />
-        </svg>
-
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;width:140px;box-shadow:var(--shadow);position:relative;z-index:2">
-          <div style="padding:6px;font-size:11px;font-weight:700;border-bottom:1px solid var(--border);background:var(--s2)">Таблица B (PK)</div>
-          <div class="pk-drop-demo" style="padding:6px;font-size:10px;display:flex;gap:5px;align-items:center">
-            <span style="color:var(--pk);font-weight:700">PK</span> <span>id</span>
-          </div>
-        </div>
+    <div id="minitab-roadmap" class="mview">
+      <div class="inst-card">
+        <h4>🏁 Дорожная карта (Workflow)</h4>
+        <p style="font-size:13px;color:var(--text);margin-bottom:15px">Как правильно работать с ER Diagram Constructor от начала до конца:</p>
+        <ol style="padding-left:20px;font-size:13px;line-height:1.8;color:var(--text)">
+          <li><strong>Создайте схему:</strong> В левом меню нажмите «＋» и назовите проект.</li>
+          <li><strong>Создайте таблицы (Сущности):</strong> Кликните ПКМ по экрану -> «Создать таблицу».</li>
+          <li><strong>Настройте колонки (Атрибуты):</strong> Выделите таблицу и в правой панели во вкладке «Колонки» добавьте атрибуты, выбрав типы данных (Primary Key, Foreign Key, String и т.д.).</li>
+          <li><strong>Расставьте связи (Отношения):</strong> Тяните коннектор от FK колонки к PK колонке нужной таблицы (подробнее во вкладке "Связи").</li>
+          <li><strong>Синхронизируйте с Google Таблицами:</strong> В верхнем меню выберите «🏗 Листы», отметьте галочками таблицы и нажмите «Добавить листы в Google Таблицу».</li>
+        </ol>
       </div>
-      <p style="font-size:12px;color:var(--t2);line-height:1.6">
-        Убедитесь, что колонка-источник имеет внешний ключ (установлен чекбокс FK). Потяните оранжевый кружок (справа от колонки) навстречу первичному ключу <span style="color:var(--pk);font-weight:700">PK</span> другой таблицы.
-      </p>
     </div>
 
-    <div class="inst-card">
-      <h4>⚙️ Синхронизация и Google Таблицы</h4>
-      <ul>
-        <li>Система автоматически в фоне синхронизирует ваши изменения с сервером ("Умная синхронизация").</li>
-        <li>Для физического создания листов перейдите во вкладку <strong>🏗 Листы</strong> и выберите нужные таблицы. Нажмите <strong>В Google Таблицы</strong>.</li>
-      </ul>
+    <div id="minitab-basics" class="mview" style="display:none">
+      <div class="inst-card">
+        <h4>🎯 Основы управления</h4>
+        <ul>
+          <li><strong>Перемещение по холсту:</strong> зажмите ЛКМ на пустом месте и тяните.</li>
+          <li><strong>Масштаб (Zoom):</strong> крутите колесико мыши.</li>
+          <li><strong>Создать таблицу:</strong> ПКМ по пустому месту холста или кнопка "＋ Таблица".</li>
+          <li><strong>Выделить несколько таблиц:</strong> зажмите <code>Ctrl</code> (или <code>Cmd</code>) и кликайте по нужным карточкам таблиц. Вы можете перемещать их группой.</li>
+        </ul>
+      </div>
     </div>
     
-    <div class="inst-card">
-      <h4>🤖 Интеграция с ИИ</h4>
-      <ul>
-        <li>Откройте вкладку <strong>{ } JSON</strong>.</li>
-        <li>Нажмите кнопку <strong>🤖 Скопировать ИИ Промт</strong> — он содержит текущую структуру вашей БД в текстовом виде.</li>
-        <li>Отправьте его ChatGPT или Claude и попросите добавить новые таблицы/колонки. Разрешен только формат JSON, просто скопируйте его ответ и вставьте в блок импорта.</li>
-      </ul>
+    <div id="minitab-rels" class="mview" style="display:none">
+      <div class="inst-card">
+        <h4>🔗 Как создавать связи (FK → PK)</h4>
+        <div style="background:var(--bg);padding:20px;border-radius:8px;margin:10px 0;display:flex;align-items:center;justify-content:center;gap:30px;min-height:120px;overflow:hidden;position:relative;border:1px dashed var(--border)">
+          
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;width:140px;box-shadow:var(--shadow)">
+            <div style="padding:6px;font-size:11px;font-weight:700;border-bottom:1px solid var(--border);background:var(--s2)">Таблица А (FK)</div>
+            <div style="padding:6px;font-size:10px;display:flex;justify-content:space-between;align-items:center">
+               <span>user_id</span>
+               <span class="fk-drag-demo" style="width:10px;height:10px;background:var(--fk);border-radius:50%;display:inline-block;box-shadow:0 0 6px var(--fk)"></span>
+            </div>
+          </div>
+
+          <svg style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none">
+            <path class="demo-path" d="M 195 65 C 230 65, 220 65, 260 65" fill="none" stroke="var(--fk)" stroke-width="2" stroke-dasharray="4,4" />
+            <circle class="demo-cursor" cx="195" cy="65" r="5" fill="#fff" stroke="var(--fk)" stroke-width="2" />
+          </svg>
+
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;width:140px;box-shadow:var(--shadow);position:relative;z-index:2">
+            <div style="padding:6px;font-size:11px;font-weight:700;border-bottom:1px solid var(--border);background:var(--s2)">Таблица B (PK)</div>
+            <div class="pk-drop-demo" style="padding:6px;font-size:10px;display:flex;gap:5px;align-items:center">
+              <span style="color:var(--pk);font-weight:700">PK</span> <span>id</span>
+            </div>
+          </div>
+        </div>
+        <p style="font-size:12px;color:var(--t2);line-height:1.6">
+          Убедитесь, что колонка-источник имеет внешний ключ (установлен чекбокс FK). Потяните оранжевый кружок (справа от колонки) навстречу первичному ключу <span style="color:var(--pk);font-weight:700">PK</span> другой таблицы.
+        </p>
+      </div>
+    </div>
+
+    <div id="minitab-sync" class="mview" style="display:none">
+      <div class="inst-card">
+        <h4>⚙️ Синхронизация и Google Таблицы</h4>
+        <ul>
+          <li>Система автоматически в фоне синхронизирует ваши изменения с сервером ("Умная синхронизация").</li>
+          <li>Для физического создания листов перейдите во вкладку <strong>🏗 Листы</strong> и выберите нужные таблицы. Нажмите <strong>В Google Таблицы</strong>.</li>
+        </ul>
+      </div>
+    </div>
+    
+    <div id="minitab-ai" class="mview" style="display:none">
+      <div class="inst-card">
+        <h4>🤖 Интеграция с ИИ</h4>
+        <ul>
+          <li>Откройте вкладку <strong>{ } JSON</strong>.</li>
+          <li>Нажмите кнопку <strong>🤖 Скопировать ИИ Промт</strong> — он содержит текущую структуру вашей БД в текстовом виде.</li>
+          <li>Отправьте его ChatGPT или Claude и попросите добавить новые таблицы/колонки. Разрешен только формат JSON, просто скопируйте его ответ и вставьте в блок импорта.</li>
+        </ul>
+      </div>
     </div>
     
     <style>
+      .mtab { background:var(--s2); border:1px solid var(--border); color:var(--text); padding:5px 12px; border-radius:5px; font-size:12px; font-weight:600; cursor:pointer; transition:all 0.15s; white-space:nowrap; }
+      .mtab:hover { border-color:var(--accent); color:var(--accent); }
+      .mtab.on { background:var(--accent); color:#fff; border-color:var(--accent); }
       .demo-cursor { animation: demo-drag 2.5s infinite cubic-bezier(0.4, 0, 0.2, 1); }
       .demo-path { animation: demo-draw 2.5s infinite linear; }
       @keyframes demo-drag {
