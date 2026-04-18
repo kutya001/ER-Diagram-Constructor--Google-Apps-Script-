@@ -42,7 +42,7 @@ function switchInstTab(t){
   const gView=document.getElementById('inst-guide-view');
   const nView=document.getElementById('inst-notes-view');
   if(gView) gView.style.display = t==='guide' ? 'block' : 'none';
-  if(nView) nView.style.display = t==='notes' ? 'block' : 'none';
+  if(nView) nView.style.display = t==='notes' ? 'flex' : 'none';
   
   if(t==='guide' && gView){
      gView.innerHTML = getGuideHTML();
