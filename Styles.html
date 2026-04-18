@@ -59,6 +59,12 @@ input,select,textarea{font-family:inherit;outline:none}
 #schema-sel{background:var(--s2);border:1px solid var(--border);color:var(--text);
   padding:5px 9px;border-radius:6px;font-size:12px;min-width:160px;max-width:200px}
 #zoom-lbl{font-size:11px;color:var(--t2);min-width:36px;text-align:center;flex-shrink:0}
+/* ── Desc toggle ── */
+.desc-toggle{display:flex!important;align-items:center;gap:5px;cursor:pointer;font-size:11px;user-select:none}
+.desc-toggle input{width:14px;height:14px;accent-color:var(--accent);cursor:pointer}
+/* ── FK optgroup styles ── */
+select optgroup{font-weight:700;color:var(--t2);font-size:11px;font-style:normal}
+select optgroup option{font-weight:400;color:var(--text);padding-left:8px}
 
 /* ── Theme dots ── */
 .themes{display:flex;gap:4px;flex-shrink:0}
@@ -186,11 +192,11 @@ input,select,textarea{font-family:inherit;outline:none}
   transform:translateY(-8px);transition:.14s;max-height:90vh;overflow-y:auto}
 .overlay.show .modal{transform:translateY(0)}
 .modal h3{font-size:14px;font-weight:700;margin-bottom:14px}
-.mfooter{display:flex;gap:7px;justify-content:flex-end;margin-top:14px}
-.mfooter button{padding:6px 15px;border-radius:6px;font-weight:600;font-size:12px}
-.mfooter .cancel{background:var(--s2);color:var(--t2);border:1px solid var(--border)}
-.mfooter .confirm{background:var(--accent);color:#fff}
-.mfooter .danger{background:var(--red);color:#fff}
+.mfooter,.modal-footer{display:flex;gap:7px;justify-content:flex-end;margin-top:14px}
+.mfooter button,.modal-footer button{padding:6px 15px;border-radius:6px;font-weight:600;font-size:12px}
+.mfooter .cancel,.modal-footer .cancel{background:var(--s2);color:var(--t2);border:1px solid var(--border)}
+.mfooter .confirm,.modal-footer .confirm{background:var(--accent);color:#fff}
+.mfooter .danger,.modal-footer .danger{background:var(--red);color:#fff}
 
 /* ════════════════════════ TOAST ════════════════════════════ */
 #toasts{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);

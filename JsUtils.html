@@ -14,4 +14,28 @@ function fmtD(d){
     const pad=n=>String(n).padStart(2,'0');
     return `${pad(dt.getDate())}.${pad(dt.getMonth()+1)}.${dt.getFullYear()} ${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
   }catch{return d;}
+}
+// FK table options grouped by category (optgroup)
+function fkTableOptsByCategory(tables,selId){
+  const byCat={};
+  tables.forEach(t=>{
+    const cid=String(t.category_id||'__none__');
+    if(!byCat[cid])byCat[cid]=[];
+    byCat[cid].push(t);
+  });
+  let html='';
+  Object.entries(byCat).forEach(([cid,ts])=>{
+    const cat=S.cats.find(c=>String(c.id)===cid);
+    const label=cat?cat.name:'Без категории';
+    if(Object.keys(byCat).length>1){
+      html+=`<optgroup label="${ea(label)}">`;
+    }
+    ts.forEach(t=>{
+      html+=`<option value="${t.id}"${String(t.id)===String(selId)?' selected':''}>${esc(t.name)}</option>`;
+    });
+    if(Object.keys(byCat).length>1){
+      html+=`</optgroup>`;
+    }
+  });
+  return html;
 }</script>

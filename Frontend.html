@@ -48,6 +48,10 @@
   <button class="tb" onclick="zoomIn()">＋</button>
   <button class="tb" onclick="resetView()" title="Сбросить вид">⌖</button>
   <div class="sep"></div>
+  <label class="tb desc-toggle" title="Показать описания вместо названий">
+    <input type="checkbox" id="chk-desc-mode" onchange="toggleDescMode(this.checked)"/> 📝 Описания
+  </label>
+  <div class="sep"></div>
   <button class="tb" id="btn-save" onclick="saveAll()">💾</button>
   <button class="tb" onclick="openTplManager()">📐 Шаблоны</button>
   <button class="tb" onclick="openDicts()">⚙️ Справочники</button>

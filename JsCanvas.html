@@ -273,9 +273,10 @@ function drawTable(t){
   ctx.lineTo(sp.x+4*sc,sp.y);ctx.lineTo(sp.x+4*sc,sp.y+TH*sc);ctx.lineTo(sp.x,sp.y+TH*sc);
   ctx.closePath();ctx.fill();
 
-  // Table name
+  // Table name / description
+  const tLabel=descMode&&t.description?t.description:t.name;
   ctx.fillStyle=C.ht;ctx.font=`bold ${~~(12*sc)}px Segoe UI`;
-  ctx.fillText(trunc(t.name,21),sp.x+10*sc,sp.y+TH*sc/2+4*sc);
+  ctx.fillText(trunc(tLabel,21),sp.x+10*sc,sp.y+TH*sc/2+4*sc);
 
   // GSheet status dot (top-right of header)
   const gsExists=sbSheetNames.has(t.name);
@@ -331,10 +332,11 @@ function drawTable(t){
       ctx.fillStyle=pk?C.pk:fk?C.fk:'#9da5c9';
       ctx.fillText(badge,sp.x+5*sc+(bw-ctx.measureText(badge).width)/2,cy+15*sc);
     }
-    // Column name
+    // Column name / description
+    const colLabel=descMode&&col.description?col.description:col.name;
     ctx.fillStyle=pk?C.pk:fk?C.fk:C.ct;
     ctx.font=`${~~(11*sc)}px Segoe UI`;
-    ctx.fillText(trunc(col.name,19),sp.x+36*sc,cy+CH*sc/2+4*sc);
+    ctx.fillText(trunc(colLabel,19),sp.x+36*sc,cy+CH*sc/2+4*sc);
     // Type designation (right side, faded)
     if(ct&&sc>.55){
       ctx.fillStyle=C.t2+'66';ctx.font=`${~~(9*sc)}px Segoe UI`;

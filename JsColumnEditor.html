@@ -48,7 +48,7 @@ function fillTypesSel(sel=''){
 }
 function fillFkTable(selT='',selC=''){
   const ts=schTables().filter(t=>S.table&&String(t.id)!==String(S.table.id));
-  document.getElementById('mc-fkt').innerHTML='<option value="">— таблица —</option>'+ts.map(t=>`<option value="${t.id}"${String(t.id)===String(selT)?' selected':''}>${esc(t.name)}</option>`).join('');
+  document.getElementById('mc-fkt').innerHTML='<option value="">— таблица —</option>'+fkTableOptsByCategory(ts,selT);
   if(selT)loadFkCols(selC);
 }
 function loadFkCols(selC=''){

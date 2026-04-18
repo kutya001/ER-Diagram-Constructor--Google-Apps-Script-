@@ -13,14 +13,14 @@ function relFillSrcTbls(){
   const ts=schTables();
   const sel=document.getElementById('rel-src-tbl');
   if(!sel)return;
-  sel.innerHTML='<option value="">— FK таблица —</option>'+ts.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  sel.innerHTML='<option value="">— FK таблица —</option>'+fkTableOptsByCategory(ts,'');
   document.getElementById('rel-src-col').innerHTML='<option value="">— FK колонка —</option>';
 }
 function relFillTgtTbls(){
   const ts=schTables();
   const sel=document.getElementById('rel-tgt-tbl');
   if(!sel)return;
-  sel.innerHTML='<option value="">— PK таблица —</option>'+ts.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  sel.innerHTML='<option value="">— PK таблица —</option>'+fkTableOptsByCategory(ts,'');
   document.getElementById('rel-tgt-col').innerHTML='<option value="">— PK колонка —</option>';
 }
 function relFillSrcCols(){
@@ -78,7 +78,7 @@ function relEditInline(btn,colId){
   const ts=schTables().filter(t=>String(t.id)!==String(col.table_id));
   relTo.innerHTML=`<select id="rei-tbl" style="font-size:11px;padding:2px 5px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:3px" onchange="reiLoadCols(this,'${colId}')">
     <option value="">— таблица —</option>
-    ${ts.map(t=>`<option value="${t.id}"${String(t.id)===String(col.fk_table_id)?' selected':''}>${esc(t.name)}</option>`).join('')}
+    ${fkTableOptsByCategory(ts,col.fk_table_id)}
   </select>
   <select id="rei-col" style="font-size:11px;padding:2px 5px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:3px"></select>
   <button onclick="reiSave('${colId}',this)" style="padding:2px 7px;border-radius:3px;font-size:10px;background:var(--accent);color:#fff">✓</button>
