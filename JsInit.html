@@ -106,13 +106,12 @@ const sbCatCollapsed=new Set(); // collapsed category ids
 function renderSbRight(){
   const hdr=document.getElementById('sb-right-hdr');
   const list=document.getElementById('sb-tbl-list');
-  if(!S.schema){hdr.textContent='— таблицы —';hdr.style.color='var(--t2)';list.innerHTML='';return;}
+  if(!S.schema){hdr.textContent='\u2014 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u2014';hdr.style.color='var(--t2)';list.innerHTML='';return;}
   hdr.innerHTML=`<span>${esc(S.schema.name)}</span><span class="tbadge" style="margin-left:4px">${schTables().length}</span>`;
   hdr.style.color='var(--text)';
   const ts=schTables();
-  if(!ts.length){list.innerHTML='<div class="sm" style="padding:8px 10px">Нет таблиц</div>';return;}
+  if(!ts.length){list.innerHTML='<div class="sm" style="padding:8px 10px">\u041d\u0435\u0442 \u0442\u0430\u0431\u043b\u0438\u0446</div>';return;}
 
-  // Group by category
   const byCat={};
   ts.forEach(t=>{
     const cid=String(t.category_id||'__none__');
@@ -120,54 +119,46 @@ function renderSbRight(){
     byCat[cid].push(t);
   });
 
-  const frag=document.createDocumentFragment();
+  let html='<table class="sb-tbl"><thead><tr><th>\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435</th><th>\u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435</th><th>\u041d\u0430\u0437\u043d.</th></tr></thead><tbody>';
   Object.entries(byCat).forEach(([cid,tables])=>{
     const cat=S.cats.find(c=>String(c.id)===cid);
     const cc=getCatColorFE(cid==='__none__'?null:cid);
     const isColl=sbCatCollapsed.has(cid);
-
-    // Category header (clickable to collapse)
-    const grp=document.createElement('div');
-    grp.className='sb-cat-group';
-
-    const hdrEl=document.createElement('div');
-    hdrEl.className='sb-cat-hdr';
-    hdrEl.style.cursor='pointer';
-    hdrEl.innerHTML=`
-      <span style="width:8px;height:8px;border-radius:50%;background:${cc};flex-shrink:0"></span>
-      <span style="flex:1">${esc(cat?cat.name:'Без категории')}</span>
-      <span style="font-size:10px;color:var(--t2)">${tables.length}</span>
-      <span style="font-size:10px;color:var(--t2);margin-left:4px;transition:transform .15s;display:inline-block;transform:rotate(${isColl?'-90':'0'}deg)">▾</span>`;
-    hdrEl.addEventListener('click',()=>{
-      isColl?sbCatCollapsed.delete(cid):sbCatCollapsed.add(cid);
-      renderSbRight();
-    });
-    grp.appendChild(hdrEl);
-
+    html+=`<tr class="sb-cat-row" onclick="sbToggleCat('${ea(cid)}')">
+      <td colspan="3">
+        <span style="width:8px;height:8px;border-radius:50%;background:${cc};display:inline-block;margin-right:5px;vertical-align:middle"></span>
+        ${esc(cat?cat.name:'\u0411\u0435\u0437 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438')}
+        <span style="color:var(--t2);margin-left:4px">${tables.length}</span>
+        <span style="color:var(--t2);margin-left:2px;display:inline-block;transform:rotate(${isColl?'-90':'0'}deg);transition:transform .15s">\u25be</span>
+      </td>
+    </tr>`;
     if(!isColl){
       tables.forEach(t=>{
-        const exists=sbSheetNames.has(t.name);
         const isSel=S.table&&String(S.table.id)===String(t.id);
-        const item=document.createElement('div');
-        item.className='sb-tbl-item'+(isSel?' active':'');
-        item.dataset.tid=t.id;
-        item.innerHTML=`
-          <span class="sb-gs-dot ${exists?'exists':'missing'}" title="${exists?'Лист создан':'Лист не создан'}"></span>
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.name)}</span>
-          <span style="font-size:10px;color:var(--t2)">${gc(t.id).length}</span>`;
-        item.addEventListener('click',()=>selectTableFromSb(t.id));
-        item.addEventListener('contextmenu',e=>{
-          e.preventDefault(); e.stopPropagation();
-          S.table=t; R(); renderPanel();
-          ctxShow(e.clientX,e.clientY,t);
-        });
-        grp.appendChild(item);
+        const exists=sbSheetNames.has(t.name);
+        const asg=S.asgs.find(a=>String(a.id)===String(t.assignment_id));
+        const nameLabel=descMode&&t.description?t.description:t.name;
+        html+=`<tr class="sb-tbl-row${isSel?' active':''}" onclick="selectTableFromSb('${ea(String(t.id))}')"
+          oncontextmenu="event.preventDefault();event.stopPropagation();sbTblCtx(event,'${ea(String(t.id))}')">
+          <td><span class="sb-gs-dot ${exists?'exists':'missing'}"></span>${esc(nameLabel)}</td>
+          <td class="sb-desc-cell">${esc(t.description||'')}</td>
+          <td class="sb-asg-cell">${esc(asg?.name||'')}</td>
+        </tr>`;
       });
     }
-    frag.appendChild(grp);
   });
-  list.innerHTML='';
-  list.appendChild(frag);
+  html+='</tbody></table>';
+  list.innerHTML=html;
+}
+function sbToggleCat(cid){
+  sbCatCollapsed.has(cid)?sbCatCollapsed.delete(cid):sbCatCollapsed.add(cid);
+  renderSbRight();
+}
+function sbTblCtx(e,tid){
+  const t=S.tables.find(t2=>String(t2.id)===String(tid));
+  if(!t)return;
+  S.table=t;R();renderPanel();
+  ctxShow(e.clientX,e.clientY,t);
 }
 
 function selectTableFromSb(tid){

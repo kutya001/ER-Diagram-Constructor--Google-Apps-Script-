@@ -176,7 +176,7 @@ let drag=false,dragT=null,dragO={x:0,y:0};
 let relDraw=false,relSrc=null,relPos=null;
 let pending={},hovT=null,hovC=null;
 let descMode=false;
-function toggleDescMode(v){descMode=v;R();MR();}
+function toggleDescMode(v){descMode=v;R();MR();renderSbRight();}
 
 // RAF flags
 let rAF=false,mrAF=false;

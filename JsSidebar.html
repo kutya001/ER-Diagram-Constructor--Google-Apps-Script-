@@ -3,7 +3,7 @@
 // SIDEBAR COLLAPSE / RESIZE
 // ═══════════════════════════════════════════════════════════
 let sbCollapsed=false,sbLeftCollapsed=false,sbRightCollapsed=false;
-const SB_WIDTH_KEY='er_sb_w', SBL_WIDTH_KEY='er_sbl_w';
+const SB_WIDTH_KEY='er_sb_w', SBL_HEIGHT_KEY='er_sbl_h';
 
 function toggleSidebar(){
   sbCollapsed=!sbCollapsed;
@@ -15,12 +15,11 @@ function toggleSidebar(){
     sb.style.borderRight='none';
     toggle.textContent='▶';
   } else {
-    const w=parseInt(sb.dataset.savedW)||460;
+    const w=parseInt(sb.dataset.savedW)||340;
     sb.style.width=w+'px';
     sb.style.borderRight='';
     toggle.textContent='◀';
   }
-  // Даём DOM обновиться (sidebar не имеет CSS transition — достаточно rAF)
   requestAnimationFrame(()=>{resize();R();MR();});
 }
 
@@ -30,21 +29,21 @@ function toggleSbLeft(){
   const btn=document.getElementById('sb-left-toggle');
   const div=document.getElementById('sb-divider');
   if(sbLeftCollapsed){
-    el.dataset.savedW=el.offsetWidth||200;
-    el.style.width='0';
-    el.style.minWidth='0';
-    el.style.borderRight='none';
+    el.dataset.savedH=el.offsetHeight||200;
+    el.style.height='0';
+    el.style.minHeight='0';
+    el.style.borderBottom='none';
     div.style.display='none';
-    btn.textContent='▶'; // collapsed → click to expand (arrow points right = "open right side")
-    btn.title='Показать список схем';
+    btn.textContent='\u25bc';
+    btn.title='\u041f\u043e\u043a\u0430\u0437\u0430\u0442\u044c \u0441\u0445\u0435\u043c\u044b';
   } else {
-    const w=parseInt(el.dataset.savedW)||200;
-    el.style.width=w+'px';
-    el.style.minWidth='';
-    el.style.borderRight='';
+    const h=parseInt(el.dataset.savedH)||200;
+    el.style.height=h+'px';
+    el.style.minHeight='';
+    el.style.borderBottom='';
     if(!sbRightCollapsed)div.style.display='';
-    btn.textContent='◀'; // expanded → click to collapse (arrow points left = "close")
-    btn.title='Скрыть список схем';
+    btn.textContent='\u25b2';
+    btn.title='\u0421\u043a\u0440\u044b\u0442\u044c \u0441\u0445\u0435\u043c\u044b';
   }
   setTimeout(()=>{resize();R();MR();},170);
 }
@@ -55,25 +54,24 @@ function toggleSbRight(){
   const div=document.getElementById('sb-divider');
   const btn=document.getElementById('sb-right-toggle');
   if(sbRightCollapsed){
-    el.dataset.savedFlex=el.style.flex||'1';
-    el.style.width='0';
+    el.style.height='0';
     el.style.flex='none';
-    el.style.minWidth='0';
+    el.style.minHeight='0';
     div.style.display='none';
-    btn.textContent='◀'; // collapsed → click to expand (arrow points left toward left side = "show")
-    btn.title='Показать список таблиц';
+    btn.textContent='\u25b2';
+    btn.title='\u041f\u043e\u043a\u0430\u0437\u0430\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u044b';
   } else {
-    el.style.width='';
+    el.style.height='';
     el.style.flex='1';
-    el.style.minWidth='0';
+    el.style.minHeight='0';
     if(!sbLeftCollapsed)div.style.display='';
-    btn.textContent='▶'; // expanded → click to collapse (arrow points right = "hide right")
-    btn.title='Скрыть список таблиц';
+    btn.textContent='\u25bc';
+    btn.title='\u0421\u043a\u0440\u044b\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u044b';
   }
   setTimeout(()=>{resize();R();MR();},170);
 }
 
-// Sidebar outer resize
+// Sidebar outer resize (width — horizontal, stays the same)
 (function(){
   const handle=document.getElementById('sb-resize');
   const sidebar=document.getElementById('sidebar');
@@ -88,41 +86,37 @@ function toggleSbRight(){
     const w=Math.max(120,Math.min(900,startW+(e.clientX-startX)));
     sidebar.style.width=w+'px';
     localStorage.setItem(SB_WIDTH_KEY,w);
-    resize();R();MR(); // FIX: обновить канвас в реалтайм
+    resize();R();MR();
   });
   document.addEventListener('mouseup',()=>{
     if(active){active=false;handle.classList.remove('dragging');document.body.style.cursor='';resize();R();MR();}
   });
-  // Restore saved width
   const saved=parseInt(localStorage.getItem(SB_WIDTH_KEY));
   if(saved&&saved>100)sidebar.style.width=saved+'px';
 })();
 
-// Sidebar divider (between sb-left and sb-right)
+// Sidebar divider (between sb-left top and sb-right bottom — vertical resize)
 (function(){
   const div=document.getElementById('sb-divider');
   const sbL=document.getElementById('sb-left');
-  let active=false,startX=0,startW=0;
+  let active=false,startY=0,startH=0;
   div.addEventListener('mousedown',e=>{
-    active=true;startX=e.clientX;startW=sbL.offsetWidth;
-    div.classList.add('dragging');document.body.style.cursor='col-resize';
+    active=true;startY=e.clientY;startH=sbL.offsetHeight;
+    div.classList.add('dragging');document.body.style.cursor='row-resize';
     e.preventDefault();
   });
   document.addEventListener('mousemove',e=>{
     if(!active)return;
-    const w=Math.max(100,Math.min(400,startW+(e.clientX-startX)));
-    sbL.style.width=w+'px';
-    localStorage.setItem(SBL_WIDTH_KEY,w);
-    // sb-divider меняет только соотношение sb-left/sb-right внутри sidebar
-    // canvas-wrap не затрагивается, но R() обновляет отрисовку
+    const h=Math.max(60,Math.min(500,startH+(e.clientY-startY)));
+    sbL.style.height=h+'px';
+    localStorage.setItem(SBL_HEIGHT_KEY,h);
     R();
   });
   document.addEventListener('mouseup',()=>{
     if(active){active=false;div.classList.remove('dragging');document.body.style.cursor='';}
   });
-  // Restore saved width
-  const saved=parseInt(localStorage.getItem(SBL_WIDTH_KEY));
-  if(saved&&saved>80)sbL.style.width=saved+'px';
+  const saved=parseInt(localStorage.getItem(SBL_HEIGHT_KEY));
+  if(saved&&saved>50)sbL.style.height=saved+'px';
 })();
 
 // ═══════════════════════════════════════════════════════════
