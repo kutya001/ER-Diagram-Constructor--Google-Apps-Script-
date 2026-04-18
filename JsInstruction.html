@@ -1,47 +1,15 @@
 <script>// ═══════════════════════════════════════════════════════════
-// INSTRUCTION
+// INSTRUCTION (INTERACTIVE GUIDE & NOTES)
 // ═══════════════════════════════════════════════════════════
 let instEditMode=false;
 const INST_KEY='er_instruction';
-const DEFAULT_INSTRUCTION=`# Инструкция по использованию ER Diagram Constructor
+const DEFAULT_NOTES=`# Заметки проекта
 
-## 🚀 Быстрый старт
-1. **Создайте схему БД** — нажмите «＋» рядом с выпадающим списком схем
-2. **Добавьте таблицы** — кнопка «＋ Таблица» в топбаре или ПКМ по холсту
-3. **Добавьте колонки** — в правой панели → «Колонки» → «＋ Добавить колонку»
-4. **Создайте связи** — потяните ● справа от FK-колонки к PK другой таблицы
+Здесь вы можете вести технические записи о проекте, описывать нюансы вашей предметной области или хранить фрагменты кода. 
+Эти заметки сохраняются в базе проекта.
 
-## 📋 Схемы
-- **Создать**: кнопка «＋» → введите название
-- **Копировать**: кнопка 📋 (только для оригинальных схем, не для копий)
-- **Контекстное меню**: ПКМ по схеме в левой панели
-- **Раскрыть/скрыть копии**: стрелка ▶ у схемы или ПКМ → «Раскрыть/скрыть»
-
-## 🗂 Таблицы
-- **Переместить**: перетащить карточку
-- **Редактировать**: двойной клик по заголовку или ПКМ
-- **Удалить**: ПКМ → «Удалить таблицу» или Delete на клавиатуре
-
-## 🔗 Связи (FK → PK)
-- Тяните **●** справа от колонки (только FK-тип) к PK-колонке другой таблицы
-- Для создания связи источник должен быть типа **fk**, цель — **pk**
-- Посмотреть все связи: кнопка «🔗 Связи» в топбаре
-- Удалить связь: ПКМ по линии или кнопка «🔗» в панели колонок
-
-## 🏗 Листы Google Таблицы
-- Откройте «🏗 Листы» → вкладка «📋 Управление»
-- Создавайте/пересоздавайте/удаляйте листы отдельно или массово (чекбоксы)
-- Кнопка «🔄 Пересоздать всю схему» — пересоздаёт все листы
-
-## 🤖 AI — JSON
-- Вкладка «{ } JSON» → «🤖 ИИ Промт» — скопируйте промт для ChatGPT/Claude
-- Вставьте JSON от ИИ в «📥 Импорт JSON» → нажмите «Импортировать»
-
-## ⌨️ Горячие клавиши
-- **Delete** — удалить выбранную таблицу
-- **Escape** — закрыть модальное окно
-- **Колесо мыши** — масштаб
-- **Перетащить фон** — панорамирование
+- Заметка 1...
+- Заметка 2...
 `;
 
 async function openInstruction(){
@@ -49,31 +17,124 @@ async function openInstruction(){
   document.getElementById('inst-edit-btn').style.display='inline-block';
   document.getElementById('inst-save-btn').style.display='none';
   showM('m-inst');
-  // Load from backend or localStorage
+  switchInstTab('guide');
+  
+  // Load notes from backend or localStorage
   try{
     const raw=await api('getInstruction',{});
-    const text=raw?.text||DEFAULT_INSTRUCTION;
+    const text=raw?.text||DEFAULT_NOTES;
     const upd=raw?.updated_at?`Обновлено: ${fmtD(raw.updated_at)}`:'';
     document.getElementById('inst-saved-at').textContent=upd;
-    renderInstView(text);
+    renderInstNotesView(text);
   }catch{
-    const local=localStorage.getItem(INST_KEY)||DEFAULT_INSTRUCTION;
-    renderInstView(local);
+    const local=localStorage.getItem(INST_KEY)||DEFAULT_NOTES;
+    renderInstNotesView(local);
     document.getElementById('inst-saved-at').textContent='(локальная копия)';
   }
 }
 
-function renderInstView(text){
-  // Simple markdown-like render
+function switchInstTab(t){
+  const gTab=document.getElementById('itab-guide');
+  const nTab=document.getElementById('itab-notes');
+  if(gTab) gTab.className = 'inst-tab' + (t==='guide'?' on':'');
+  if(nTab) nTab.className = 'inst-tab' + (t==='notes'?' on':'');
+  
+  const gView=document.getElementById('inst-guide-view');
+  const nView=document.getElementById('inst-notes-view');
+  if(gView) gView.style.display = t==='guide' ? 'flex' : 'none';
+  if(nView) nView.style.display = t==='notes' ? 'flex' : 'none';
+  
+  if(t==='guide' && gView){
+     gView.innerHTML = getGuideHTML();
+  }
+}
+
+function getGuideHTML(){
+  return `
+    <div class="inst-card">
+      <h4>🎯 Основы управления</h4>
+      <ul>
+        <li><strong>Перемещение по холсту:</strong> зажмите ЛКМ на пустом месте и тяните.</li>
+        <li><strong>Масштаб (Zoom):</strong> крутите колесико мыши.</li>
+        <li><strong>Создать таблицу:</strong> ПКМ по пустому месту холста или кнопка "＋ Таблица".</li>
+        <li><strong>Выделить несколько таблиц:</strong> зажмите <code>Ctrl</code> (или <code>Cmd</code>) и кликайте по нужным карточкам таблиц. Вы можете перемещать их группой.</li>
+      </ul>
+    </div>
+    
+    <div class="inst-card">
+      <h4>🔗 Как создавать связи (FK → PK)</h4>
+      <div style="background:var(--bg);padding:20px;border-radius:8px;margin:10px 0;display:flex;align-items:center;justify-content:center;gap:30px;min-height:120px;overflow:hidden;position:relative;border:1px dashed var(--border)">
+        
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;width:140px;box-shadow:var(--shadow)">
+          <div style="padding:6px;font-size:11px;font-weight:700;border-bottom:1px solid var(--border);background:var(--s2)">Таблица А (FK)</div>
+          <div style="padding:6px;font-size:10px;display:flex;justify-content:space-between;align-items:center">
+             <span>user_id</span>
+             <span class="fk-drag-demo" style="width:10px;height:10px;background:var(--fk);border-radius:50%;display:inline-block;box-shadow:0 0 6px var(--fk)"></span>
+          </div>
+        </div>
+
+        <svg style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none">
+          <path class="demo-path" d="M 195 65 C 230 65, 220 65, 260 65" fill="none" stroke="var(--fk)" stroke-width="2" stroke-dasharray="4,4" />
+          <circle class="demo-cursor" cx="195" cy="65" r="5" fill="#fff" stroke="var(--fk)" stroke-width="2" />
+        </svg>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;width:140px;box-shadow:var(--shadow);position:relative;z-index:2">
+          <div style="padding:6px;font-size:11px;font-weight:700;border-bottom:1px solid var(--border);background:var(--s2)">Таблица B (PK)</div>
+          <div class="pk-drop-demo" style="padding:6px;font-size:10px;display:flex;gap:5px;align-items:center">
+            <span style="color:var(--pk);font-weight:700">PK</span> <span>id</span>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--t2);line-height:1.6">
+        Убедитесь, что колонка-источник имеет внешний ключ (установлен чекбокс FK). Потяните оранжевый кружок (справа от колонки) навстречу первичному ключу <span style="color:var(--pk);font-weight:700">PK</span> другой таблицы.
+      </p>
+    </div>
+
+    <div class="inst-card">
+      <h4>⚙️ Синхронизация и Google Таблицы</h4>
+      <ul>
+        <li>Система автоматически в фоне синхронизирует ваши изменения с сервером ("Умная синхронизация").</li>
+        <li>Для физического создания листов перейдите во вкладку <strong>🏗 Листы</strong> и выберите нужные таблицы. Нажмите <strong>В Google Таблицы</strong>.</li>
+      </ul>
+    </div>
+    
+    <div class="inst-card">
+      <h4>🤖 Интеграция с ИИ</h4>
+      <ul>
+        <li>Откройте вкладку <strong>{ } JSON</strong>.</li>
+        <li>Нажмите кнопку <strong>🤖 Скопировать ИИ Промт</strong> — он содержит текущую структуру вашей БД в текстовом виде.</li>
+        <li>Отправьте его ChatGPT или Claude и попросите добавить новые таблицы/колонки. Разрешен только формат JSON, просто скопируйте его ответ и вставьте в блок импорта.</li>
+      </ul>
+    </div>
+    
+    <style>
+      .demo-cursor { animation: demo-drag 2.5s infinite cubic-bezier(0.4, 0, 0.2, 1); }
+      .demo-path { animation: demo-draw 2.5s infinite linear; }
+      @keyframes demo-drag {
+         0% { cx: 195; cy: 65; opacity: 0; transform:scale(1); }
+         15% { opacity: 1; }
+         70% { cx: 255; cy: 65; opacity: 1; transform:scale(1.2); }
+         80% { opacity: 0; }
+         100% { opacity: 0; }
+      }
+      @keyframes demo-draw {
+         0% { stroke-dashoffset: 200; }
+         100% { stroke-dashoffset: 0; }
+      }
+    </style>
+  `;
+}
+
+function renderInstNotesView(text){
   const html=text
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/^### (.+)$/gm,'<h4 style="margin:14px 0 5px;font-size:13px;color:var(--accent)">$1</h4>')
-    .replace(/^## (.+)$/gm,'<h3 style="margin:16px 0 7px;font-size:14px;color:var(--text)">$1</h3>')
-    .replace(/^# (.+)$/gm,'<h2 style="margin:0 0 12px;font-size:16px;color:var(--accent);border-bottom:1px solid var(--border);padding-bottom:8px">$1</h2>')
+    .replace(/^### (.+)$/gm,'<h4 style="margin:16px 0 6px;font-size:14px;color:var(--accent)">$1</h4>')
+    .replace(/^## (.+)$/gm,'<h3 style="margin:18px 0 8px;font-size:15px;color:var(--text)">$1</h3>')
+    .replace(/^# (.+)$/gm,'<h2 style="margin:0 0 16px;font-size:17px;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:10px">$1</h2>')
     .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-    .replace(/`(.+?)`/g,'<code style="background:var(--s3);padding:1px 5px;border-radius:3px;font-size:11px">$1</code>')
-    .replace(/^- (.+)$/gm,'<li style="margin:3px 0">$1</li>')
-    .replace(/^(\d+)\. (.+)$/gm,'<li style="margin:3px 0"><strong>$1.</strong> $2</li>')
+    .replace(/`(.+?)`/g,'<code style="background:var(--s3);padding:2px 6px;border-radius:4px;font-size:12px;color:var(--accent)">$1</code>')
+    .replace(/^- (.+)$/gm,'<li style="margin:4px 0;margin-left:20px;color:var(--t2)">$1</li>')
+    .replace(/^(\d+)\. (.+)$/gm,'<li style="margin:4px 0;margin-left:20px;color:var(--t2)"><strong>$1.</strong> $2</li>')
     .replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');
   document.getElementById('inst-body').innerHTML=`<div style="line-height:1.7;font-size:13px">${html}</div>`;
 }
@@ -84,19 +145,18 @@ function toggleInstEdit(){
   const saveBtn=document.getElementById('inst-save-btn');
   if(instEditMode){
     editBtn.style.display='none';saveBtn.style.display='inline-block';
-    // Get current text
-    const cur=document.getElementById('inst-body').innerText||DEFAULT_INSTRUCTION;
+    const cur=document.getElementById('inst-body').innerText||DEFAULT_NOTES;
     api('getInstruction',{}).then(raw=>{
-      const text=raw?.text||DEFAULT_INSTRUCTION;
-      document.getElementById('inst-body').innerHTML=`<textarea id="inst-ta" style="width:100%;min-height:400px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:10px;font-size:12px;line-height:1.7;resize:vertical;font-family:inherit" spellcheck="false">${text}</textarea>`;
+      const text=raw?.text||DEFAULT_NOTES;
+      document.getElementById('inst-body').innerHTML=`<textarea id="inst-ta" style="width:100%;min-height:350px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:12px;font-size:13px;line-height:1.7;resize:vertical;font-family:inherit" spellcheck="false">${text}</textarea>`;
     }).catch(()=>{
-      const text=localStorage.getItem(INST_KEY)||DEFAULT_INSTRUCTION;
-      document.getElementById('inst-body').innerHTML=`<textarea id="inst-ta" style="width:100%;min-height:400px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:10px;font-size:12px;line-height:1.7;resize:vertical;font-family:inherit" spellcheck="false">${text}</textarea>`;
+      const text=localStorage.getItem(INST_KEY)||DEFAULT_NOTES;
+      document.getElementById('inst-body').innerHTML=`<textarea id="inst-ta" style="width:100%;min-height:350px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:12px;font-size:13px;line-height:1.7;resize:vertical;font-family:inherit" spellcheck="false">${text}</textarea>`;
     });
   }else{
     editBtn.style.display='inline-block';saveBtn.style.display='none';
     const ta=document.getElementById('inst-ta');
-    if(ta)renderInstView(ta.value);
+    if(ta)renderInstNotesView(ta.value);
   }
 }
 
@@ -107,11 +167,12 @@ async function saveInstruction(){
   localStorage.setItem(INST_KEY,text);
   try{
     await api('saveInstruction',{text});
-    toast('Инструкция сохранена','ok');
+    toast('Заметки сохранены','ok');
   }catch{toast('Сохранено локально','inf');}
   instEditMode=false;
   document.getElementById('inst-edit-btn').style.display='inline-block';
   document.getElementById('inst-save-btn').style.display='none';
   document.getElementById('inst-saved-at').textContent=`Обновлено: ${fmtD(new Date().toISOString())}`;
-  renderInstView(text);
-}</script>
+  renderInstNotesView(text);
+}
+</script>

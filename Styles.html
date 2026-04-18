@@ -203,6 +203,15 @@ select optgroup option{font-weight:400;color:var(--text);padding-left:8px}
   transform:translateY(-8px);transition:.14s;max-height:90vh;overflow-y:auto}
 .overlay.show .modal{transform:translateY(0)}
 .modal h3{font-size:14px;font-weight:700;margin-bottom:14px}
+
+/* Instruction tabs */
+.inst-tab{flex:1;text-align:center;padding:12px;cursor:pointer;font-size:13px;font-weight:600;color:var(--t2);border-bottom:2px solid transparent;transition:all 0.15s ease}
+.inst-tab:hover{color:var(--text);background:var(--s2)}
+.inst-tab.on{color:var(--accent);border-bottom-color:var(--accent);background:var(--surface)}
+.inst-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,0.03)}
+.inst-card h4{color:var(--accent);font-size:14px;margin-bottom:10px}
+.inst-card ul{padding-left:20px;font-size:13px;line-height:1.6;color:var(--text)}
+.inst-card code{background:var(--s3);padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600;color:var(--t2)}
 .mfooter,.modal-footer{display:flex;gap:7px;justify-content:flex-end;margin-top:14px}
 .mfooter button,.modal-footer button{padding:6px 15px;border-radius:6px;font-weight:600;font-size:12px}
 .mfooter .cancel,.modal-footer .cancel{background:var(--s2);color:var(--t2);border:1px solid var(--border)}

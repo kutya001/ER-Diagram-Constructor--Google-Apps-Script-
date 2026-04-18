@@ -114,14 +114,7 @@ function onUp(e){
     relDraw=false;relSrc=null;relPos=null;cv.style.cursor='default';R();return;
   }
   if(drag){drag=false;dragSet=[];cv.style.cursor='default';savePending();}
-  if(pan){
-    if(!panMoved && !e.ctrlKey){
-      // Left click without movement on empty space -> Create Table at pointer
-      const p=cvPos(e),wp=s2w(p.x,p.y);
-      addTable(wp.x, wp.y);
-    }
-    pan=false;cv.style.cursor='default';
-  }
+  if(pan){pan=false;cv.style.cursor='default';}
 }
 function onGlobalUp(){
   if(relDraw){relDraw=false;relSrc=null;relPos=null;cv.style.cursor='default';R();}
@@ -140,7 +133,12 @@ function onCtx(e){
   hideRelPopup();
   const wp=s2w(...Object.values(cvPos(e)));
   const hit=hitTable(wp);
-  if(hit){S.table=hit;R();renderPanel();ctxShow(e.clientX,e.clientY,hit);}
+  if(hit){
+    S.table=hit;R();renderPanel();ctxShow(e.clientX,e.clientY,hit);
+  } else {
+    selTables.clear(); S.table=null; R(); renderPanel();
+    addTable(wp.x, wp.y);
+  }
 }
 function onDbl(e){const hit=hitTable(s2w(...Object.values(cvPos(e))));if(hit)openEditTable(hit);}
 
