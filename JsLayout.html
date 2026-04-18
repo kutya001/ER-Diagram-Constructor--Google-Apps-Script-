@@ -458,10 +458,72 @@ async function rmRel(colId){
   api('deleteRelation',{fk_column_id:colId}).catch(()=>{});
   toast('Связь удалена','ok');R();renderPanel();
 }
-function togglePanel(){
+let rpCollapsed=false;
+const RP_WIDTH_KEY='er_rp_w';
+
+function toggleRpanel(){
+  rpCollapsed=!rpCollapsed;
   const rp=document.getElementById('rpanel');
-  rp.classList.toggle('hidden');
-  // Ждём окончания CSS transition (.16s) перед resize
+  const toggle=document.getElementById('rp-toggle');
+  if(rpCollapsed){
+    rp.dataset.savedW=rp.offsetWidth;
+    rp.style.width='0';
+    rp.style.minWidth='0';
+    rp.style.borderLeft='none';
+    if(toggle) toggle.textContent='◀';
+  } else {
+    const w=parseInt(rp.dataset.savedW)||290;
+    rp.style.width=w+'px';
+    rp.style.minWidth='250px';
+    rp.style.borderLeft='';
+    if(toggle) toggle.textContent='▶';
+  }
   setTimeout(()=>{resize();R();MR();},170);
+}
+
+// Right panel resize (width — horizontal, inverted direction)
+setTimeout(()=>{
+  const handle=document.getElementById('rp-resize');
+  const rp=document.getElementById('rpanel');
+  if(!handle||!rp)return;
+  let active=false,startX=0,startW=0;
+  handle.addEventListener('mousedown',e=>{
+    if(rpCollapsed)return;
+    active=true;startX=e.clientX;startW=rp.offsetWidth;
+    handle.classList.add('dragging');document.body.style.cursor='col-resize';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!active)return;
+    const w=Math.max(200,Math.min(900,startW-(e.clientX-startX)));
+    rp.style.width=w+'px';
+    localStorage.setItem(RP_WIDTH_KEY,w);
+    resize();R();MR();
+  });
+  document.addEventListener('mouseup',()=>{
+    if(active){active=false;handle.classList.remove('dragging');document.body.style.cursor='';resize();R();MR();}
+  });
+  const saved=parseInt(localStorage.getItem(RP_WIDTH_KEY));
+  if(saved&&saved>200)rp.style.width=saved+'px';
+},100);
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(()=>{});
+  } else {
+    if (document.exitFullscreen) {
+      document.exitFullscreen();
+    }
+  }
+}
+
+let allPanelsHidden = false;
+function toggleAllPanels() {
+  allPanelsHidden = !allPanelsHidden;
+  if(allPanelsHidden && !sbCollapsed) toggleSidebar();
+  if(!allPanelsHidden && sbCollapsed) toggleSidebar();
+  
+  if(allPanelsHidden && !rpCollapsed) toggleRpanel();
+  if(!allPanelsHidden && rpCollapsed) toggleRpanel();
 }
 </script>
