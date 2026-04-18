@@ -76,15 +76,13 @@ function renderMtGrid(){
     const des=typeDesig(col.type_id);
     const isPk=des==='pk',isFk=des==='fk';
     const typeOpts=S.ctypes.map(t=>`<option value="${t.id}"${String(t.id)===String(col.type_id)?' selected':''}>${esc(t.designation)} — ${esc(t.name)}</option>`).join('');
+    const fkPkCol=col.fk_table_id?S.columns.find(c=>String(c.table_id)===String(col.fk_table_id)&&isPK(c)):null;
     const fkSel=isFk?`<td>
       <select onchange="mtFkTChange(${col._uid},this.value)" style="width:100%;padding:3px 5px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:3px;font-size:10px">
         <option value="">— таблица —</option>
         ${fkTableOptsByCategory(schTables().filter(t=>t.name!==document.getElementById('mt-name')?.value),col.fk_table_id)}
       </select>
-      <select onchange="mtFkCChange(${col._uid},this.value)" style="width:100%;padding:3px 5px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:3px;font-size:10px;margin-top:2px">
-        <option value="">— pk-колонка —</option>
-        ${S.columns.filter(c=>String(c.table_id)===String(col.fk_table_id)&&isPK(c)).map(c=>`<option value="${c.id}"${String(c.id)===String(col.fk_column_id)?' selected':''}>${esc(c.name)}</option>`).join('')}
-      </select>
+      ${fkPkCol?`<div style="font-size:9px;color:var(--green);margin-top:2px">→ PK: ${esc(fkPkCol.name)}</div>`:col.fk_table_id?'<div style="font-size:9px;color:var(--red);margin-top:2px">⚠ Нет PK</div>':''}
     </td>`:'';
     return`<tr data-uid="${col._uid}">
       <td><span class="drag-handle" draggable="true">⠿</span></td>
@@ -120,7 +118,13 @@ function mtColTypeChange(uid,val){
   if(!c.is_fk){c.fk_table_id='';c.fk_column_id='';}
   renderMtGrid();
 }
-function mtFkTChange(uid,val){const c=mtCols.find(r=>r._uid===uid);if(c){c.fk_table_id=val;c.fk_column_id='';}renderMtGrid();}
+function mtFkTChange(uid,val){
+  const c=mtCols.find(r=>r._uid===uid);if(!c)return;
+  c.fk_table_id=val;
+  const pk=val?S.columns.find(col=>String(col.table_id)===String(val)&&isPK(col)):null;
+  c.fk_column_id=pk?String(pk.id):'';
+  renderMtGrid();
+}
 function mtFkCChange(uid,val){const c=mtCols.find(r=>r._uid===uid);if(c)c.fk_column_id=val;}
 function mtAddRow(){mtCols.push({_uid:++mtColUid,name:'',type_id:'',description:'',is_pk:false,is_fk:false,fk_table_id:'',fk_column_id:''});renderMtGrid();}
 function mtDelRow(uid){mtCols=mtCols.filter(r=>r._uid!==uid);renderMtGrid();}
