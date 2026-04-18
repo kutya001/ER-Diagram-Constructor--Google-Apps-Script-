@@ -41,13 +41,29 @@ function queueSync(action, payload){
   return new Promise((resolve,reject)=>{
     SQ.push({action,payload,resolve,reject});
     clearTimeout(syncTO);
+    setSyncState('pending');
     syncTO=setTimeout(flushSync, 400);
   });
+}
+
+const syncLog=[];
+const SYNC_LOG_MAX=100;
+function logSync(action,ok,detail){
+  syncLog.unshift({ts:new Date(),action,ok,detail});
+  if(syncLog.length>SYNC_LOG_MAX)syncLog.length=SYNC_LOG_MAX;
+  renderSyncBadge();
+}
+function renderSyncBadge(){
+  const b=document.getElementById('sync-badge');
+  if(!b)return;
+  b.textContent=syncLog.length?String(syncLog.length):'';
+  b.style.display=syncLog.length?'':'none';
 }
 
 async function flushSync(){
   if(syncRunning||!SQ.length){return;}
   syncRunning=true;
+  setSyncState('syncing');
   const batch=[...SQ]; SQ.length=0;
   try{
     const reqs=batch.map(b=>({action:b.action,payload:b.payload}));
@@ -57,76 +73,89 @@ async function flushSync(){
         .withFailureHandler(e=>rej(new Error(e.message||String(e))))
         .processBatch(reqs);
     });
-    batch.forEach(b=>b.resolve&&b.resolve());
+    batch.forEach(b=>{
+      logSync(b.action,true,JSON.stringify(b.payload).substring(0,120));
+      b.resolve&&b.resolve();
+    });
     syncErrCount=0;
+    if(!SQ.length)setSyncState('synced');
   }catch(e){
     syncErrCount++;
-    batch.forEach(b=>SQ.push(b));
+    batch.forEach(b=>{
+      logSync(b.action,false,e.message||String(e));
+      SQ.push(b);
+    });
     if(syncErrCount<3){syncTO=setTimeout(flushSync,2000);}
     else{
-      // Сохранить несохранённые действия в localStorage для восстановления
       try{
-        const failed = batch.map(b=>({action:b.action,payload:b.payload}));
+        const failed=batch.map(b=>({action:b.action,payload:b.payload}));
         localStorage.setItem('er_failed_sync',JSON.stringify(failed));
       }catch(e2){}
       batch.forEach(b=>b.reject&&b.reject(e));
       toast('Ошибка синхронизации — данные сохранены локально','err');
     }
+    setSyncState('error');
   }finally{syncRunning=false;}
   if(SQ.length)flushSync();
 }
 
 async function syncNow(){
-  // Start syncing - yellow + spinning
   setSyncState('syncing');
-  
   clearTimeout(syncTO);
   await flushSync();
-  
-  // Check result
-  if(syncErrCount === 0 && !SQ.length){
-    // Success - green (will auto-reset after 3 seconds)
+  if(syncErrCount===0&&!SQ.length){
     setSyncState('synced');
     toast('Синхронизировано','ok');
   } else {
-    // Error - red
     setSyncState('error');
     toast('Ошибка синхронизации','err');
   }
 }
 
-/** Установить состояние кнопки синхронизации */
-let syncResetTimer = null;
+let syncResetTimer=null;
 function setSyncState(state){
-  const btn = document.getElementById('btn-sync');
-  if(!btn) return;
-  
-  // Очищаем предыдущий таймер сброса
-  if(syncResetTimer) clearTimeout(syncResetTimer);
-  
-  btn.classList.remove('syncing', 'synced', 'error');
-  
-  if(state === 'syncing'){
+  const btn=document.getElementById('btn-sync');
+  if(!btn)return;
+  if(syncResetTimer)clearTimeout(syncResetTimer);
+  btn.classList.remove('syncing','synced','error');
+  if(state==='syncing'){
     btn.classList.add('syncing');
-    btn.title = 'Синхронизация...';
-  } else if(state === 'synced'){
+    btn.title='Синхронизация...';
+  }else if(state==='synced'){
     btn.classList.add('synced');
-    btn.title = 'Синхронизировано';
-    // Возврат к нормальному состоянию через 3 секунды
-    syncResetTimer = setTimeout(() => {
-      btn.classList.remove('synced');
-      btn.title = 'Синхронизировать данные';
-    }, 3000);
-  } else if(state === 'error'){
+    btn.title='Синхронизировано';
+    syncResetTimer=setTimeout(()=>{btn.classList.remove('synced');btn.title='Синхронизировать данные';},3000);
+  }else if(state==='error'){
     btn.classList.add('error');
-    btn.title = 'Ошибка синхронизации';
-  } else if(state === 'pending'){
-    // Ожидание - оставляем без класса, но можно добавить индикатор
-    btn.title = 'Ожидание синхронизации...';
-  } else {
-    // Нормальное состояние
-    btn.title = 'Синхронизировать данные';
+    btn.title='Ошибка синхронизации';
+  }else if(state==='pending'){
+    btn.title='Ожидание синхронизации...';
+  }else{
+    btn.title='Синхронизировать данные';
   }
+}
+
+function toggleSyncDetails(){
+  let panel=document.getElementById('sync-details');
+  if(panel){panel.remove();return;}
+  panel=document.createElement('div');
+  panel.id='sync-details';
+  let html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>История синхронизации</b><button onclick="this.parentElement.parentElement.remove()" style="background:none;color:var(--t2);border:none;cursor:pointer;font-size:16px">✕</button></div>';
+  if(!syncLog.length){html+='<div style="color:var(--t2);font-size:11px">Нет записей</div>';}
+  else{
+    html+='<div style="max-height:300px;overflow-y:auto">';
+    syncLog.forEach(e=>{
+      const t=e.ts.toLocaleTimeString();
+      const icon=e.ok?'✅':'❌';
+      html+=`<div style="padding:3px 0;border-bottom:1px solid var(--border);font-size:11px">
+        <span style="color:var(--t2)">${t}</span> ${icon} <b>${esc(e.action)}</b>
+        <div style="color:var(--t2);font-size:10px;word-break:break-all;max-height:40px;overflow:hidden">${esc(e.detail)}</div>
+      </div>`;
+    });
+    html+='</div>';
+  }
+  panel.innerHTML=html;
+  document.body.appendChild(panel);
 }
 
 /** Повторить сохранение локальных действий, которые не удалось отправить */
@@ -176,7 +205,7 @@ let drag=false,dragT=null,dragO={x:0,y:0};
 let relDraw=false,relSrc=null,relPos=null;
 let pending={},hovT=null,hovC=null;
 let descMode=false;
-function toggleDescMode(v){descMode=v;R();MR();renderSbRight();}
+function toggleDescMode(v){descMode=v;R();MR();}
 
 // RAF flags
 let rAF=false,mrAF=false;

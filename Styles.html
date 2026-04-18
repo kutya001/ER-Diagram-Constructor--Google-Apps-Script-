@@ -295,6 +295,11 @@ select optgroup option{font-weight:400;color:var(--text);padding-left:8px}
 
 @keyframes spin-sync{to{transform:rotate(360deg)}}
 
+/* Sync detail button & panel */
+.sync-detail-btn{position:relative;padding:5px 6px!important;min-width:0}
+#sync-details{position:fixed;top:54px;right:12px;width:340px;background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;box-shadow:var(--shadow);z-index:4000;padding:12px;font-size:12px;color:var(--text)}
+
 /* Старый класс для совместимости */
 .sync-spin{display:inline-block;animation:spin-sync 1s linear infinite}
 

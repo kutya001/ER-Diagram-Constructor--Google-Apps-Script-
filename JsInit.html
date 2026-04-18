@@ -137,10 +137,9 @@ function renderSbRight(){
         const isSel=S.table&&String(S.table.id)===String(t.id);
         const exists=sbSheetNames.has(t.name);
         const asg=S.asgs.find(a=>String(a.id)===String(t.assignment_id));
-        const nameLabel=descMode&&t.description?t.description:t.name;
         html+=`<tr class="sb-tbl-row${isSel?' active':''}" onclick="selectTableFromSb('${ea(String(t.id))}')"
           oncontextmenu="event.preventDefault();event.stopPropagation();sbTblCtx(event,'${ea(String(t.id))}')">
-          <td><span class="sb-gs-dot ${exists?'exists':'missing'}"></span>${esc(nameLabel)}</td>
+          <td><span class="sb-gs-dot ${exists?'exists':'missing'}"></span>${esc(t.name)}</td>
           <td class="sb-desc-cell">${esc(t.description||'')}</td>
           <td class="sb-asg-cell">${esc(asg?.name||'')}</td>
         </tr>`;
