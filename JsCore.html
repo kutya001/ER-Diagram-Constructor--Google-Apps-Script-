@@ -42,8 +42,20 @@ function queueSync(action, payload){
     SQ.push({action,payload,resolve,reject});
     clearTimeout(syncTO);
     setSyncState('pending');
-    syncTO=setTimeout(flushSync, 400);
+    syncTO=setTimeout(flushSync, 1000);
   });
+}
+
+// High-level debounced trigger: collects changes and sends after 1s of inactivity
+let _triggerTimer=null;
+const _pendingPayloads=[];
+function triggerSync(action, payload){
+  _pendingPayloads.push({action,payload});
+  clearTimeout(_triggerTimer);
+  _triggerTimer=setTimeout(()=>{
+    _pendingPayloads.splice(0).forEach(p=>queueSync(p.action,p.payload));
+  },1000);
+  setSyncState('pending');
 }
 
 const syncLog=[];
