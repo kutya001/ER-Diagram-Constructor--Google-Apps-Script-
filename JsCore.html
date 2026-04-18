@@ -207,7 +207,8 @@ const TW=220,TH=38,CH=28;
 
 let sc=1,ox=80,oy=80;
 let pan=false,panS=null;
-let drag=false,dragT=null,dragO={x:0,y:0};
+let drag=false,dragSet=[],panMoved=false;
+let selTables=new Set();
 let relDraw=false,relSrc=null,relPos=null;
 let pending={},hovT=null,hovC=null;
 let descMode=false;

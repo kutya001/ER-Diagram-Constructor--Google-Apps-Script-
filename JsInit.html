@@ -156,14 +156,14 @@ function sbToggleCat(cid){
 function sbTblCtx(e,tid){
   const t=S.tables.find(t2=>String(t2.id)===String(tid));
   if(!t)return;
-  S.table=t;R();renderPanel();
+  selTables.clear(); selTables.add(String(tid)); S.table=t; R(); renderPanel();
   ctxShow(e.clientX,e.clientY,t);
 }
 
 function selectTableFromSb(tid){
   const t=S.tables.find(t=>String(t.id)===String(tid));
   if(!t)return;
-  S.table=t;
+  selTables.clear(); selTables.add(String(tid)); S.table=t;
   // scroll canvas to table
   const tx=t.pos_x||100,ty=t.pos_y||100;
   ox=cv.width/2-tx*sc; oy=cv.height/2-ty*sc;

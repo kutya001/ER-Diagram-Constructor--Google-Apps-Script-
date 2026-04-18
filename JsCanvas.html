@@ -42,34 +42,55 @@ function cvPos(e){const r=cv.getBoundingClientRect();return{x:e.clientX-r.left,y
 
 function onDown(e){
   const p=cvPos(e),wp=s2w(p.x,p.y);
+  panMoved=false;
   const fk=hitFK(wp);
   if(fk){relDraw=true;relSrc=fk;cv.style.cursor='crosshair';return;}
   const hit=hitTable(wp);
   if(hit){
     selRel=null;
-    S.table=hit; drag=true; dragT=hit;
-    dragO={x:wp.x-(hit.pos_x||100),y:wp.y-(hit.pos_y||100)};
+    if(e.ctrlKey || e.metaKey){
+      if(selTables.has(String(hit.id))) selTables.delete(String(hit.id));
+      else { selTables.add(String(hit.id)); S.table=hit; }
+    } else {
+      if(!selTables.has(String(hit.id))){
+        selTables.clear(); selTables.add(String(hit.id)); S.table=hit;
+      }
+    }
+    drag=true;
+    dragSet=Array.from(selTables).map(id=>{
+      const t=S.tables.find(tbl=>String(tbl.id)===id);
+      return t ? {t, ox: wp.x-(t.pos_x||100), oy: wp.y-(t.pos_y||100)} : null;
+    }).filter(Boolean);
     cv.style.cursor='grabbing'; R(); renderPanel(); e.stopPropagation();
     return;
   }
   // Check relation click
   const hr=hitRel(wp);
   if(hr){
-    selRel=hr; S.table=null;
+    selRel=hr; selTables.clear(); S.table=null;
     R(); renderPanel();
     showRelPopup(hr, e.clientX, e.clientY);
     return;
   }
-  selRel=null;
+  selRel=null; selTables.clear();
   hideRelPopup();
-  pan=true; panS={x:e.clientX-ox,y:e.clientY-oy};
+  pan=true; panS={x:e.clientX-ox, y:e.clientY-oy, startX:e.clientX, startY:e.clientY};
   S.table=null; cv.style.cursor='grabbing'; R(); renderPanel();
 }
 function onMove(e){
   const p=cvPos(e),wp=s2w(p.x,p.y);
   if(relDraw){relPos=p;R();return;}
-  if(drag&&dragT){dragT.pos_x=wp.x-dragO.x;dragT.pos_y=wp.y-dragO.y;pending[dragT.id]=true;R();MR();return;}
-  if(pan){ox=e.clientX-panS.x;oy=e.clientY-panS.y;R();MR();return;}
+  if(drag&&dragSet.length>0){
+    dragSet.forEach(item=>{
+      item.t.pos_x=wp.x-item.ox; item.t.pos_y=wp.y-item.oy;
+      pending[item.t.id]=true;
+    });
+    R();MR();return;
+  }
+  if(pan){
+    if(Math.abs(e.clientX-panS.startX)>4||Math.abs(e.clientY-panS.startY)>4) panMoved=true;
+    ox=e.clientX-panS.x;oy=e.clientY-panS.y;R();MR();return;
+  }
   // hover
   const ph=hovT,pc=hovC,pr=hovRel; hovT=null;hovC=null;hovRel=null;
   const fk=hitFK(wp);
@@ -92,12 +113,19 @@ function onUp(e){
     if(pk)createRel(relSrc,pk);
     relDraw=false;relSrc=null;relPos=null;cv.style.cursor='default';R();return;
   }
-  if(drag){drag=false;cv.style.cursor='default';savePending();}
-  pan=false;cv.style.cursor='default';
+  if(drag){drag=false;dragSet=[];cv.style.cursor='default';savePending();}
+  if(pan){
+    if(!panMoved && !e.ctrlKey){
+      // Left click without movement on empty space -> Create Table at pointer
+      const p=cvPos(e),wp=s2w(p.x,p.y);
+      addTable(wp.x, wp.y);
+    }
+    pan=false;cv.style.cursor='default';
+  }
 }
 function onGlobalUp(){
   if(relDraw){relDraw=false;relSrc=null;relPos=null;cv.style.cursor='default';R();}
-  pan=false;drag=false;
+  pan=false;drag=false;dragSet=[];
 }
 function onWheel(e){
   e.preventDefault();
@@ -245,7 +273,7 @@ function hitRel(wp){
 function drawTable(t){
   const cols=gc(t.id),x=t.pos_x||100,y=t.pos_y||100,h=TH+cols.length*CH+8;
   const sp=w2s(x,y),sw=TW*sc,sh=h*sc,r=7*sc;
-  const isSel=S.table&&String(S.table.id)===String(t.id);
+  const isSel=(S.table&&String(S.table.id)===String(t.id)) || selTables.has(String(t.id));
   const isPending=String(t.id).startsWith('tmp_');
   ctx.save();
 
