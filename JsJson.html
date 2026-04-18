@@ -3,6 +3,37 @@
 // JSON / AI — multi-tab: export, import, AI prompt, system dump
 // ═══════════════════════════════════════════════════════════
 let jData=null, jTab='export', sysDump=null;
+let aceEditors={};
+
+function initAce(id, mode='json', readonly=false){
+  if(!window.ace)return null;
+  const el=document.getElementById(id);
+  if(!el)return null;
+  
+  // Clean up existing editor if any
+  if(aceEditors[id]){
+    try{aceEditors[id].destroy();aceEditors[id].container.remove();}catch(e){}
+  }
+
+  const theme = curTheme === 'dark' ? 'ace/theme/monokai' : (curTheme === 'warm' ? 'ace/theme/tomorrow_night_eighties' : 'ace/theme/chrome');
+  const editor = ace.edit(id);
+  editor.setTheme(theme);
+  editor.session.setMode("ace/mode/" + mode);
+  editor.setReadOnly(readonly);
+  editor.setOptions({
+    fontSize: "12px",
+    showPrintMargin: false,
+    useSoftTabs: true,
+    tabSize: 2,
+    wrap: true,
+    fontFamily: "'Consolas', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace"
+  });
+  aceEditors[id] = editor;
+  return editor;
+}
+
+function getAceVal(id){return aceEditors[id] ? aceEditors[id].getValue() : '';}
+function setAceVal(id, val){if(aceEditors[id]) aceEditors[id].setValue(val, -1);}
 
 const AI_PROMPT_TEMPLATE = `# ER Diagram Constructor — AI JSON Schema Builder
 # Версия: 1.0 | Используй этот промт для генерации схем БД в JSON формате
@@ -124,23 +155,46 @@ async function renderJsonExport(){
     jData=await api('exportSchemaJson',{schema_id:S.schema.id});
     const meta=[{l:'Таблиц',v:jData.meta.table_count},{l:'Колонок',v:jData.meta.column_count},{l:'Связей',v:jData.meta.relation_count}];
     b.innerHTML=`
-      <div style="display:flex;gap:9px;flex-wrap:wrap;flex-shrink:0">
-        ${meta.map(m=>`<div style="padding:5px 14px;background:var(--s2);border:1px solid var(--border);border-radius:6px;text-align:center">
-          <div style="font-size:17px;font-weight:700;color:var(--accent)">${m.v}</div><div class="sm">${m.l}</div></div>`).join('')}
+      <div style="display:flex;gap:7px;align-items:center;flex-shrink:0">
+        ${meta.map(m=>`<div style="padding:4px 12px;background:var(--s2);border:1px solid var(--border);border-radius:6px;text-align:center">
+          <span style="font-size:14px;font-weight:700;color:var(--accent)">${m.v}</span> <span class="sm">${m.l}</span></div>`).join('')}
+        <div style="margin-left:auto;font-size:11px;color:var(--t2)">💡 Вы можете редактировать JSON ниже и сохранить изменения</div>
       </div>
-      <div id="json-out" style="flex:1"></div>
+      <div id="json-editor-export" style="flex:1;border:1px solid var(--border);border-radius:6px;min-height:200px"></div>
       <div style="display:flex;gap:7px;flex-shrink:0">
-        <button onclick="copyJsonExport()" style="flex:1;padding:8px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:12px">📋 Копировать JSON</button>
-        <button onclick="dlJson()" style="flex:1;padding:8px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-weight:600;font-size:12px">⬇ Скачать .json</button>
-        <button onclick="switchJsonTab('ai');buildAiPromptWithSchema()" style="flex:1;padding:8px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-weight:600;font-size:12px">🤖 Открыть в ИИ</button>
+        <button onclick="applyJsonChanges()" style="flex:1.5;padding:8px;background:var(--green);color:#fff;border-radius:5px;font-weight:600;font-size:12px;border:none">💾 Применить изменения</button>
+        <button onclick="copyJsonExport()" style="flex:1;padding:8px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:12px;border:none">📋 Копировать</button>
+        <button onclick="dlJson()" style="flex:1;padding:8px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-weight:600;font-size:12px">⬇ Скачать</button>
       </div>`;
-    document.getElementById('json-out').innerHTML=syntaxHighlight(JSON.stringify(jData,null,2));
+    const ed = initAce('json-editor-export', 'json');
+    if(ed) ed.setValue(JSON.stringify(jData, null, 2), -1);
   }catch(e){b.innerHTML=`<div style="color:var(--red)">Ошибка: ${esc(e.message)}</div>`;}
 }
 
+async function applyJsonChanges(){
+  const val = getAceVal('json-editor-export');
+  if(!val)return;
+  let j;
+  try{j=JSON.parse(val);}catch(e){toast('Ошибка JSON: '+e.message,'err');return;}
+  
+  if(!j.schema || !Array.isArray(j.tables)){toast('Неверная структура JSON','err');return;}
+  
+  const ok = await conf('Обновить текущую схему?','Все существующие таблицы будут заменены данными из JSON.', async ()=>{
+    try{
+      toast('Применяем изменения…','inf');
+      await api('importSchemaJson',{json:j, overwrite: true});
+      await loadAll();
+      inv();
+      if(S.schema) selSchema(String(S.schema.id));
+      toast('Схема обновлена','ok');
+      renderJsonExport(); // Refresh meta and editor
+    }catch(e){toast('Ошибка: '+e.message,'err');}
+  });
+}
+
 function copyJsonExport(){
-  if(!jData)return;
-  const t=JSON.stringify(jData,null,2);
+  const t = getAceVal('json-editor-export') || JSON.stringify(jData, null, 2);
+  if(!t)return;
   (navigator.clipboard?.writeText(t)||Promise.reject())
     .then(()=>toast('Скопировано','ok'))
     .catch(()=>{const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Скопировано','ok');});
@@ -149,23 +203,16 @@ function copyJsonExport(){
 function copyJson(){copyJsonExport();}
 
 function dlJson(){
-  if(!jData)return;
+  const t = getAceVal('json-editor-export') || JSON.stringify(jData, null, 2);
+  if(!t)return;
   const n=(S.schema?.name||'schema').replace(/[^\w\u0400-\u04FF]/g,'_');
   const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([JSON.stringify(jData,null,2)],{type:'application/json'}));
+  a.href=URL.createObjectURL(new Blob([t],{type:'application/json'}));
   a.download=`${n}.json`;document.body.appendChild(a);a.click();document.body.removeChild(a);
   toast('Скачан','ok');
 }
 
-function syntaxHighlight(str){
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,m=>{
-      if(/^"/.test(m))return/:$/.test(m)?`<span class="jk">${m}</span>`:`<span class="js">${m}</span>`;
-      if(/true|false/.test(m))return`<span class="jb">${m}</span>`;
-      if(/null/.test(m))return`<span class="jnu">${m}</span>`;
-      return`<span class="jn">${m}</span>`;
-    });
-}
+// Removed syntaxHighlight — now using Ace Editor for highlighting
 
 // ── IMPORT tab ───────────────────────────────────────────────
 function renderJsonImport(){
@@ -182,7 +229,7 @@ function renderJsonImport(){
         <input type="file" id="imp-file" accept=".json,application/json" style="display:none" onchange="loadJsonFile(event)">
       </div>
     </div>
-    <textarea id="imp-json" class="ai-prompt-area" placeholder='Вставьте JSON схему сюда...\n\nПример:\n{\n  "schema": { "name": "Моя схема" },\n  "tables": [...]\n}'></textarea>
+    <div id="ace-import" style="flex:1;min-height:200px;border:1px solid var(--border);border-radius:6px"></div>
     <div style="background:#5b8dee11;border:1px solid #5b8dee44;border-radius:7px;padding:10px;flex-shrink:0">
       <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:5px">💡 Как использовать с ИИ</div>
       <ol style="font-size:11px;color:var(--t2);padding-left:18px;line-height:1.8">
@@ -198,6 +245,7 @@ function renderJsonImport(){
     </div>
     <div id="imp-status"></div>
   `;
+  initAce('ace-import', 'json');
 }
 
 function loadJsonFile(e){
@@ -206,7 +254,7 @@ function loadJsonFile(e){
   reader.onload=ev=>{
     try{
       const parsed=JSON.parse(ev.target.result);
-      document.getElementById('imp-json').value=JSON.stringify(parsed,null,2);
+      setAceVal('ace-import', JSON.stringify(parsed,null,2));
       toast('Файл загружен','ok');
     }catch{toast('Ошибка парсинга JSON','err');}
   };
@@ -214,7 +262,7 @@ function loadJsonFile(e){
 }
 
 function validateImportJson(){
-  const raw=document.getElementById('imp-json')?.value?.trim();
+  const raw=getAceVal('ace-import').trim();
   const st=document.getElementById('imp-status');
   if(!raw){st.innerHTML='<div style="color:var(--red);margin-top:8px;font-size:12px">⚠ Вставьте JSON</div>';return;}
   try{
@@ -233,7 +281,7 @@ function validateImportJson(){
 }
 
 async function doImportJson(){
-  const raw=document.getElementById('imp-json')?.value?.trim();
+  const raw=getAceVal('ace-import').trim();
   const overwrite=document.getElementById('imp-overwrite')?.checked;
   if(!raw){toast('Вставьте JSON','err');return;}
   let j;
@@ -264,7 +312,7 @@ async function renderJsonAI(){
       <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:5px">🤖 Промт для ИИ-помощников</div>
       <p class="sm">Скопируйте этот промт и вставьте в ChatGPT, Claude, Gemini или другой ИИ вместе с описанием вашей схемы. ИИ вернёт готовый JSON для импорта.</p>
     </div>
-    <textarea id="ai-prompt-out" class="ai-prompt-area" readonly style="flex:1;min-height:340px">Генерация промта…</textarea>
+    <div id="ace-ai-prompt" style="flex:1;min-height:300px;border:1px solid var(--border);border-radius:6px"></div>
     <div style="display:flex;gap:7px;flex-shrink:0">
       <button onclick="copyAiPrompt()" style="flex:1;padding:9px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:12px">📋 Копировать промт</button>
       <button onclick="buildAiPromptWithSchema()" style="padding:9px 14px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-size:12px">↻ Обновить</button>
@@ -273,13 +321,13 @@ async function renderJsonAI(){
       <strong style="color:var(--orange)">💡 Совет:</strong> После получения JSON от ИИ — перейдите на вкладку <strong style="color:var(--text)">📥 Импорт JSON</strong> и вставьте ответ туда.
     </div>
   `;
+  const ed = initAce('ace-ai-prompt', 'markdown', true);
   buildAiPromptWithSchema();
 }
 
 async function buildAiPromptWithSchema(){
-  const ta=document.getElementById('ai-prompt-out');
-  if(!ta)return;
-  ta.value='⏳ Подготовка промта…';
+  if(!aceEditors['ace-ai-prompt'])return;
+  setAceVal('ace-ai-prompt', '⏳ Подготовка промта…');
   try{
     // Gather system data for context
     const sysData={
@@ -297,15 +345,16 @@ async function buildAiPromptWithSchema(){
       .replace('{{SYSTEM_DATA}}',JSON.stringify(sysData,null,2))
       .replace('{{CURRENT_SCHEMA}}',currentSchemaStr);
     ta.value=prompt;
-  }catch(e){ta.value='Ошибка: '+e.message;}
+    setAceVal('ace-ai-prompt', prompt);
+  }catch(e){setAceVal('ace-ai-prompt', 'Ошибка: '+e.message);}
 }
 
 function copyAiPrompt(){
-  const ta=document.getElementById('ai-prompt-out');if(!ta)return;
-  const t=ta.value;
+  const t = getAceVal('ace-ai-prompt');
+  if(!t)return;
   (navigator.clipboard?.writeText(t)||Promise.reject())
     .then(()=>toast('Промт скопирован','ok'))
-    .catch(()=>{ta.select();document.execCommand('copy');toast('Скопировано','ok');});
+    .catch(()=>{const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Скопировано','ok');});
 }
 
 // ── SYSTEM DATA tab ───────────────────────────────────────────
@@ -439,7 +488,7 @@ async function renderSqlExport(){
           <input type="checkbox" id="sql-fk" checked style="width:15px;height:15px;accent-color:var(--accent)" onchange="renderSqlDialect()"/> FOREIGN KEY constraints
         </label>
       </div>
-      <div id="sql-out" style="flex:1;min-height:200px"></div>
+      <div id="ace-sql-out" style="flex:1;min-height:200px;border:1px solid var(--border);border-radius:6px"></div>
       <div style="display:flex;gap:7px;flex-shrink:0">
         <button onclick="copySqlExport()" style="flex:1;padding:8px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:12px">📋 Копировать SQL</button>
         <button onclick="dlSql()" style="flex:1;padding:8px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:5px;font-weight:600;font-size:12px">⬇ Скачать .sql</button>
@@ -469,7 +518,8 @@ function renderSqlDialect(){
     result=dropStmts+'\n\n'+result;
   }
   
-  out.innerHTML=`<textarea readonly style="width:100%;height:300px;padding:10px;background:var(--json-bg);border:1px solid var(--border);color:var(--text);font-family:'Consolas','Monaco',monospace;font-size:11px;resize:none;border-radius:5px">${esc(result)}</textarea>`;
+  const ed = initAce('ace-sql-out', 'sql', true);
+  if(ed) ed.setValue(result, -1);
 }
 
 function copySqlExport(){
@@ -514,7 +564,7 @@ function renderSqlImport(){
         <input type="file" id="imp-sql-file" accept=".sql" style="display:none" onchange="loadSqlFile(event)">
       </div>
     </div>
-    <textarea id="imp-sql" class="ai-prompt-area" placeholder="Вставьте SQL DDL сюда...\n\nПример:\nCREATE TABLE users (\n  id SERIAL PRIMARY KEY,\n  name VARCHAR(255) NOT NULL,\n  email VARCHAR(255) UNIQUE\n);" style="flex:1;min-height:200px"></textarea>
+    <div id="ace-sql-import" style="flex:1;min-height:200px;border:1px solid var(--border);border-radius:6px"></div>
     <div style="background:#5b8dee11;border:1px solid #5b8dee44;border-radius:7px;padding:10px;flex-shrink:0">
       <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:5px">💡 Поддерживаемые конструкции</div>
       <ul style="font-size:11px;color:var(--t2);padding-left:18px;line-height:1.8">
@@ -530,20 +580,21 @@ function renderSqlImport(){
     </div>
     <div id="imp-sql-status"></div>
   `;
+  initAce('ace-sql-import', 'sql');
 }
 
 function loadSqlFile(e){
   const file=e.target.files[0];if(!file)return;
   const reader=new FileReader();
   reader.onload=ev=>{
-    document.getElementById('imp-sql').value=ev.target.result;
+    setAceVal('ace-sql-import', ev.target.result);
     toast('Файл загружен','ok');
   };
   reader.readAsText(file);
 }
 
 function validateImportSql(){
-  const raw=document.getElementById('imp-sql')?.value?.trim();
+  const raw=getAceVal('ace-sql-import').trim();
   const st=document.getElementById('imp-sql-status');
   if(!raw){st.innerHTML='<div style="color:var(--red);margin-top:8px;font-size:12px">⚠ Вставьте SQL</div>';return;}
   
@@ -560,7 +611,7 @@ function validateImportSql(){
 }
 
 async function doImportSql(){
-  const raw=document.getElementById('imp-sql')?.value?.trim();
+  const raw=getAceVal('ace-sql-import').trim();
   const dialect=document.getElementById('imp-sql-dialect').value;
   if(!raw){toast('Вставьте SQL','err');return;}
   

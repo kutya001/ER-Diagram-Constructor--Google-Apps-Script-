@@ -17,24 +17,38 @@ function fmtD(d){
 }
 // FK table options grouped by category (optgroup)
 function fkTableOptsByCategory(tables,selId){
+  // Sort all tables alphabetically by name
+  const sortedTables = [...tables].sort((a,b) => (a.name||'').localeCompare(b.name||'', undefined, {numeric: true, sensitivity: 'base'}));
+  
   const byCat={};
-  tables.forEach(t=>{
+  sortedTables.forEach(t=>{
     const cid=String(t.category_id||'__none__');
     if(!byCat[cid])byCat[cid]=[];
     byCat[cid].push(t);
   });
+
+  // Sort category IDs alphabetically by category name, putting '__none__' last
+  const sortedCids = Object.keys(byCat).sort((a, b) => {
+    if (a === '__none__') return 1;
+    if (b === '__none__') return -1;
+    const catA = S.cats.find(c => String(c.id) === a);
+    const catB = S.cats.find(c => String(c.id) === b);
+    return (catA?.name || '').localeCompare(catB?.name || '', undefined, {numeric: true, sensitivity: 'base'});
+  });
+
   let html='';
-  Object.entries(byCat).forEach(([cid,ts])=>{
-    const cat=S.cats.find(c=>String(c.id)===cid);
-    const label=cat?cat.name:'Без категории';
-    if(Object.keys(byCat).length>1){
-      html+=`<optgroup label="${ea(label)}">`;
+  sortedCids.forEach(cid => {
+    const ts = byCat[cid];
+    const cat = S.cats.find(c=>String(c.id)===cid);
+    const label = cat ? cat.name : 'Без категории';
+    if(sortedCids.length > 1){
+      html += `<optgroup label="${ea(label)}">`;
     }
     ts.forEach(t=>{
-      html+=`<option value="${t.id}"${String(t.id)===String(selId)?' selected':''}>${esc(t.name)}</option>`;
+      html += `<option value="${t.id}"${String(t.id)===String(selId)?' selected':''}>${esc(t.name)}</option>`;
     });
-    if(Object.keys(byCat).length>1){
-      html+=`</optgroup>`;
+    if(sortedCids.length > 1){
+      html += `</optgroup>`;
     }
   });
   return html;

@@ -442,11 +442,24 @@ select optgroup option{font-weight:400;color:var(--text);padding-left:8px}
 .bld-bulk-btn.danger:hover{border-color:var(--red)}
 .bld-bulk-btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .tbl-row input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);flex-shrink:0;cursor:pointer}
-.ai-prompt-area{width:100%;min-height:260px;padding:10px 12px;
-  background:var(--json-bg);border:1px solid var(--border);color:var(--text);
-  border-radius:7px;font-family:'Cascadia Code','Fira Code','Courier New',monospace;
-  font-size:11px;line-height:1.6;resize:vertical;tab-size:2;transition:border-color .1s}
-.ai-prompt-area:focus{border-color:var(--accent)}
+.ai-prompt-area{display:none}
+.ace_editor{
+  font-family:'Consolas','Monaco','Menlo','Ubuntu Mono',monospace!important;
+  font-size:12px!important;
+  background:var(--json-bg)!important;
+  border-radius:6px;
+}
+.ace_gutter{background:var(--s2)!important;color:var(--t2)!important}
+.ace_active-line{background:var(--s3)!important}
+.ace_keyword{color:var(--ts)!important}
+.ace_string{color:var(--fk)!important}
+.ace_variable{color:var(--pk)!important}
+.ace_comment{color:var(--t2)!important}
+/* Custom Scrollbar for Ace */
+.ace_scrollbar::-webkit-scrollbar{width:8px;height:8px}
+.ace_scrollbar::-webkit-scrollbar-track{background:transparent}
+.ace_scrollbar::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+.ace_scrollbar::-webkit-scrollbar-thumb:hover{background:var(--t2)}
 .table-pending-overlay{position:absolute;inset:0;background:rgba(0,0,0,.18);
   display:flex;align-items:center;justify-content:center;border-radius:7px;
   pointer-events:none;z-index:50}
