@@ -93,9 +93,17 @@ async function flushSync(){
         logSync(b.action, false, res.error, {logId:b.logId, payload:b.payload, preState:b.preState});
         b.reject && b.reject(new Error(res.error));
       } else {
-        const resultId = res && res.data && res.data.id ? res.data.id : null;
+        const data = res && res.data ? res.data : null;
+        const resultId = data && data.id ? data.id : null;
+        
+        // If it was a creation, add it to Sync Cache
+        if(resultId && b.action.startsWith('create')) {
+           let type = b.action.includes('Table')?'table_':b.action.includes('Column')?'column_':'';
+           if(type) SC.set(type + resultId, JSON.parse(JSON.stringify(data)));
+        }
+        
         logSync(b.action, true, JSON.stringify(b.payload).substring(0,80), {logId:b.logId, payload:b.payload, preState:b.preState, resultId});
-        b.resolve && b.resolve(res ? res.data : undefined);
+        b.resolve && b.resolve(data);
       }
     });
     syncErrCount=0;
@@ -287,8 +295,20 @@ function R(){if(rAF)return;rAF=true;requestAnimationFrame(()=>{rAF=false;render(
 function MR(){if(mrAF)return;mrAF=true;requestAnimationFrame(()=>{mrAF=false;miniRender();});}
 
 // ═══════════════════════════════════════════════════════════
-// API
+// SYNC CACHE & API
 // ═══════════════════════════════════════════════════════════
+const SC = new Map(); // Sync Cache: stores the last known "clean" state of objects
+
+/** Refresh cache from global state S */
+function updateSyncCache(data={}) {
+  const t = data.tables || S.tables || [];
+  const c = data.columns || S.columns || [];
+  t.forEach(it => SC.set('table_'+it.id, JSON.parse(JSON.stringify(it))));
+  c.forEach(it => SC.set('column_'+it.id, JSON.parse(JSON.stringify(it))));
+  if(data.cats) data.cats.forEach(it => SC.set('cat_'+it.id, JSON.parse(JSON.stringify(it))));
+  if(data.asgs) data.asgs.forEach(it => SC.set('asg_'+it.id, JSON.parse(JSON.stringify(it))));
+}
+
 const api=(action,p={})=>{
   const readOnly = /^(get|list|export|analyse)/.test(action);
   if (readOnly) {
@@ -299,13 +319,18 @@ const api=(action,p={})=>{
         .processRequest(action,p);
     });
   } else {
-    // Capture preState for reversible actions
-    let pre = null;
-    if(action==='updateTable'||action==='deleteTable') pre = S.tables.find(t=>String(t.id)===String(p.id));
-    if(action==='updateColumn'||action==='deleteColumn') pre = S.columns.find(c=>String(c.id)===String(p.id));
-    if(action==='updateCategory') pre = S.cats.find(c=>String(c.id)===String(p.id));
-    if(action==='updateAssignment') pre = S.asgs.find(a=>String(a.id)===String(p.id));
-    if(pre) pre = JSON.parse(JSON.stringify(pre)); // Deep clone
+    // Capture preState from Sync Cache (SC) instead of S
+    let type = action.includes('Table')?'table_':action.includes('Column')?'column_':action.includes('Category')?'cat_':action.includes('Assignment')?'asg_':'';
+    let key = type + p.id;
+    let pre = SC.get(key) || null;
+    
+    // Update Sync Cache optimistically with payload
+    if(type && p.id && action.startsWith('update')) {
+      const current = SC.get(key) || {};
+      SC.set(key, JSON.parse(JSON.stringify({...current, ...p})));
+    } else if (type && p.id && action.startsWith('delete')) {
+      SC.delete(key);
+    }
     
     return queueSync(action, p, pre);
   }

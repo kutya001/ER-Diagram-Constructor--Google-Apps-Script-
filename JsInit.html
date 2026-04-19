@@ -21,8 +21,8 @@ async function loadAll(){
   const rows=await apiAll(); // single round-trip
   const [schemas,cats,asgs,ctypes,tables,columns,tpls,tcols]=rows.map(r=>r.ok?r.data:[]);
   S.schemas=schemas||[]; S.cats=cats||[]; S.asgs=asgs||[]; S.ctypes=ctypes||[];
-  S.tables=tables||[]; S.columns=columns||[];
-  S.tpls=tpls||[]; S.tcols=tcols||[];
+  S.tables=tables||[]; S.columns=columns||[]; S.tpls=tpls||[]; S.tcols=tcols||[];
+  updateSyncCache({tables, columns, cats, asgs});
   inv();
   // FIX BUG 8: загрузить имена листов для статус-точек GSheet
   try{
