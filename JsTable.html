@@ -242,13 +242,74 @@ async function submitTable(){
       renderPanel();
     }catch(e){toast('Ошибка сохранения: '+e.message,'err');R();MR();renderPanel();}
   }else{
-    // Edit mode — just update header, columns managed separately
+    // Edit mode — update header AND sync columns
     closeM('m-table');
     try{
+      // 1. Update table metadata
       const u=await api('updateTable',{id:editTid,name,description:desc,category_id:cid,assignment_id:aid});
       const i=S.tables.findIndex(t=>String(t.id)===String(editTid));
-      if(i>=0)S.tables[i]={...S.tables[i],...u};S.table=S.tables[i];
-      toast('Таблица сохранена','ok');
+      if(i>=0) S.tables[i]={...S.tables[i],...u};
+      S.table=S.tables[i];
+
+      // 2. Prepare column synchronization
+      const originalCols = gc(editTid);
+      const actions = [];
+      
+      // DELETES: Any original column not in current mtCols
+      originalCols.forEach(oc => {
+        if (!mtCols.find(c => String(c.id) === String(oc.id))) {
+          actions.push({ action: 'deleteColumn', payload: { id: oc.id } });
+        }
+      });
+
+      // CREATES & UPDATES
+      mtCols.forEach((c, idx) => {
+        const isNew = !c.id || String(c.id).startsWith('tmp');
+        const payload = {
+          table_id: editTid,
+          name: c.name,
+          description: c.description || '',
+          type_id: c.type_id || '',
+          is_pk: c.is_pk || typeIsPK(c.type_id),
+          is_fk: c.is_fk || typeIsFK(c.type_id),
+          fk_table_id: c.fk_table_id || '',
+          fk_column_id: c.fk_column_id || '',
+          position: idx + 1
+        };
+
+        if (isNew) {
+          actions.push({ action: 'createColumn', payload });
+        } else {
+          // Update existing
+          payload.id = c.id;
+          actions.push({ action: 'updateColumn', payload });
+        }
+      });
+
+      console.log('Syncing columns for table', editTid, actions);
+
+      if (actions.length) {
+        const batchResults = await new Promise((res2, rej) => {
+          google.script.run.withSuccessHandler(r => r.ok ? res2(r.data) : rej(new Error(r.error)))
+            .withFailureHandler(e => rej(new Error(e.message)))
+            .processBatch(actions);
+        });
+
+        // 3. Update local state S.columns
+        // Remove deleted and old versions of updated columns
+        const updatedIds = actions.filter(a => a.action === 'updateColumn' || a.action === 'deleteColumn').map(a => a.payload.id);
+        S.columns = S.columns.filter(c => String(c.table_id) !== String(editTid) || !updatedIds.includes(c.id));
+        
+        // Add new and updated columns from results
+        batchResults.forEach(res => {
+          if (res.ok && res.data && res.data.id) { // create/update return row
+            S.columns.push(res.data);
+          }
+        });
+      }
+
+      inv(editTid);
+      toast('Таблица и столбцы сохранены','ok');
     }catch(e){toast('Ошибка: '+e.message,'err');}
     R();MR();renderPanel();
   }
