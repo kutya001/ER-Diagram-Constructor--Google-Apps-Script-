@@ -138,7 +138,12 @@ function setupTplDrag(cols,tid){
   const list=document.getElementById('tcl');if(!list)return;
   let ds=null;
   list.querySelectorAll('.tcol-row').forEach(row=>{
-    row.addEventListener('dragstart', e=>{ds=row; row.style.opacity='.4';});
+    row.addEventListener('dragstart', e=>{
+      ds=row;
+      row.style.opacity='.4';
+      e.dataTransfer.effectAllowed='move';
+      e.dataTransfer.setData('text/plain', '');
+    });
     row.addEventListener('dragend', ()=>{row.style.opacity='1'; saveTplOrder(tid);});
     row.addEventListener('dragover', e=>{
       e.preventDefault();

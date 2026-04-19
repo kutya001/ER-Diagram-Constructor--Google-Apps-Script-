@@ -440,7 +440,12 @@ function setupColDrag(cols){
   const list=document.getElementById('col-list');if(!list)return;
   let ds=null;
   list.querySelectorAll('.col-item').forEach(item=>{
-    item.addEventListener('dragstart',e=>{ds=item;item.classList.add('dragging');e.dataTransfer.effectAllowed='move';});
+    item.addEventListener('dragstart',e=>{
+      ds=item;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed='move';
+      e.dataTransfer.setData('text/plain', '');
+    });
     item.addEventListener('dragend',  ()=>{item.classList.remove('dragging');reorderCols();});
     item.addEventListener('dragover', e=>{e.preventDefault();if(item!==ds){const r=item.getBoundingClientRect();list.insertBefore(ds,e.clientY<r.top+r.height/2?item:item.nextSibling);}});
   });

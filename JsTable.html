@@ -135,7 +135,12 @@ function setupMtDrag(){
   tbody.querySelectorAll('tr').forEach(row=>{
     const handle=row.querySelector('.drag-handle');
     if(handle){
-      handle.addEventListener('dragstart',e=>{ds=row;row.style.opacity='.4';e.dataTransfer.effectAllowed='move';});
+      handle.addEventListener('dragstart',e=>{
+        ds=row;
+        row.style.opacity='.4';
+        e.dataTransfer.effectAllowed='move';
+        e.dataTransfer.setData('text/plain', ''); // required for some browsers
+      });
       handle.addEventListener('dragend',()=>{row.style.opacity='1';rebuildMtOrder();});
     }
     row.addEventListener('dragover',e=>{e.preventDefault();if(row!==ds){const r=row.getBoundingClientRect();tbody.insertBefore(ds,e.clientY<r.top+r.height/2?row:row.nextSibling);}});
@@ -188,6 +193,16 @@ async function submitTable(){
         const finalPos_y = (serverTable.pos_y != null) ? serverTable.pos_y : originalPos_y;
         S.tables[idx]={...serverTable, pos_x: finalPos_x, pos_y: finalPos_y};
         S.table = S.tables[idx];
+
+        // IMPORTANT: Immediately link optimistic columns to the real table ID
+        // so they don't disappear from the canvas while they are being created on server
+        const realTid = serverTable.id;
+        S.columns.forEach(c => {
+          if (String(c.table_id) === String(tempId)) c.table_id = realTid;
+        });
+        inv(tempId);
+        inv(realTid);
+        R();
       }
       
       // Create columns from mtCols on the server

@@ -186,10 +186,34 @@ function isFK(c){return isTrue(c.is_fk);}
 // ═══════════════════════════════════════════════════════════
 // RENDER  (main canvas, RAF-driven, no double-frames)
 // ═══════════════════════════════════════════════════════════
+let SI = {active:false, tid:null, relTids:new Set(), relCids:new Set()};
+
+function calcSI(){
+  SI = {active:false, tid:null, relTids:new Set(), relCids:new Set()};
+  if(selTables.size!==1)return;
+  const tid=Array.from(selTables)[0];
+  SI.active=true; SI.tid=tid;
+  S.columns.forEach(c=>{
+    // Outgoing
+    if(String(c.table_id)===String(tid) && isFK(c) && c.fk_table_id){
+      SI.relTids.add(String(c.fk_table_id));
+      SI.relCids.add(String(c.id));
+      SI.relCids.add(String(c.fk_column_id));
+    }
+    // Incoming
+    if(String(c.fk_table_id)===String(tid) && isFK(c)){
+      SI.relTids.add(String(c.table_id));
+      SI.relCids.add(String(c.id));
+      SI.relCids.add(String(c.fk_column_id));
+    }
+  });
+}
+
 function render(){
   ctx.fillStyle=C.bg; ctx.fillRect(0,0,cv.width,cv.height);
   drawGrid();
   if(!S.schema){drawEmpty();return;}
+  calcSI();
   drawRels(); schTables().forEach(t=>drawTable(t));
   if(relDraw&&relSrc&&relPos)drawRelDraft();
 }
@@ -253,11 +277,15 @@ function drawRels(){
 
     const isHov=hovRel&&String(hovRel.id)===String(col.id);
     const isSel=selRel&&String(selRel.id)===String(col.id);
-    const lineW=isSel?3:isHov?2.5:1.5;
-    const lineCol=isSel?C.lh:isHov?C.lh:C.li;
+    const isRelToSel = SI.active && (String(col.table_id) === String(SI.tid) || String(col.fk_table_id) === String(SI.tid));
+
+    const lineW=(isSel||isRelToSel)?3:isHov?2.5:1.5;
+    const lineCol=(isSel||isRelToSel||isHov)?C.lh:C.li;
+    const opacity=(SI.active && !isRelToSel && !isSel && !isHov) ? 0.2 : 1.0;
 
     ctx.save();
-    if(isSel){ctx.shadowColor=C.lh;ctx.shadowBlur=8;}
+    ctx.globalAlpha = opacity;
+    if(isSel || isRelToSel){ctx.shadowColor=C.lh;ctx.shadowBlur=8*sc;}
     ctx.strokeStyle=lineCol;ctx.lineWidth=lineW;
     ctx.beginPath();ctx.moveTo(sp.x,sp.y);
     ctx.bezierCurveTo(sp.x+dx*dirS,sp.y,tp2.x+dx*dirT,tp2.y,tp2.x,tp2.y);
@@ -329,11 +357,15 @@ function drawTable(t){
   const cols=gc(t.id),x=t.pos_x||100,y=t.pos_y||100,h=TH+cols.length*CH+8;
   const sp=w2s(x,y),sw=TW*sc,sh=h*sc,r=7*sc;
   const isSel=(S.table&&String(S.table.id)===String(t.id)) || selTables.has(String(t.id));
+  const isRelT = SI.active && SI.relTids.has(String(t.id));
   const isPending=String(t.id).startsWith('tmp_');
+  
   ctx.save();
+  if(SI.active && !isSel && !isRelT) ctx.globalAlpha = 0.45;
 
-  // Selection glow
+  // Selection/Relation glow
   if(isSel){ctx.shadowColor='rgba(91,141,238,.45)';ctx.shadowBlur=16*sc;}
+  else if(isRelT){ctx.shadowColor=C.lh;ctx.shadowBlur=12*sc;}
 
   // Body
   RR(sp.x,sp.y,sw,sh,r);
@@ -342,8 +374,8 @@ function drawTable(t){
 
   // Border (double for selected)
   RR(sp.x,sp.y,sw,sh,r);
-  ctx.strokeStyle=isSel?C.ts:isPending?C.li:C.tbr;
-  ctx.lineWidth=isSel?2:.8;ctx.stroke();
+  ctx.strokeStyle=isSel?C.ts:isRelT?C.lh:isPending?C.li:C.tbr;
+  ctx.lineWidth=isSel?2:isRelT?1.5:.8;ctx.stroke();
 
   // Header background
   RRt(sp.x,sp.y,sw,TH*sc,r);
@@ -399,9 +431,11 @@ function drawTable(t){
   // Columns
   cols.forEach((col,i)=>{
     const cy=sp.y+TH*sc+i*CH*sc;
-    // Hover highlight
-    if(String(hovT)===String(t.id)&&String(hovC)===String(col.id)){
-      ctx.fillStyle=C.ch;ctx.fillRect(sp.x+1,cy,sw-2,CH*sc);
+    const isRelC = SI.active && SI.relCids.has(String(col.id));
+    // Hover or Relation highlight
+    if((String(hovT)===String(t.id)&&String(hovC)===String(col.id)) || isRelC){
+      ctx.fillStyle=(isRelC && !isSel) ? C.lh+'33' : C.ch;
+      ctx.fillRect(sp.x+1,cy,sw-2,CH*sc);
     }
     const pk=isPK(col),fk=isFK(col);
     const ct=S.ctypes.find(tp=>String(tp.id)===String(col.type_id));
@@ -417,8 +451,8 @@ function drawTable(t){
     }
     // Column name / description
     const colLabel=descMode&&col.description?col.description:col.name;
-    ctx.fillStyle=pk?C.pk:fk?C.fk:C.ct;
-    ctx.font=`${~~(11*sc)}px Segoe UI`;
+    ctx.fillStyle=pk?C.pk:fk?C.fk:isRelC?C.ht:C.ct;
+    ctx.font=(isRelC?'bold ':'')+`${~~(11*sc)}px Segoe UI`;
     ctx.fillText(trunc(colLabel,19),sp.x+36*sc,cy+CH*sc/2+4*sc);
     // Type designation (right side, faded)
     if(ct&&sc>.55){
