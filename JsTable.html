@@ -13,6 +13,7 @@ function addTable(){
   document.getElementById('mt-title').textContent='Новая таблица';
   document.getElementById('mt-name').value='';
   document.getElementById('mt-desc').value='';
+  document.getElementById('mt-note').value='';
   fillCatAsg();
   renderMtGrid();
   showM('m-table');
@@ -23,6 +24,7 @@ function openEditTable(t){
   document.getElementById('mt-title').textContent='Редактировать';
   document.getElementById('mt-name').value=t.name;
   document.getElementById('mt-desc').value=t.description||'';
+  document.getElementById('mt-note').value=t.note||'';
   fillCatAsg(t.category_id,t.assignment_id);
   // Load existing columns into mtCols for display (edit mode shows read-only grid)
   const existing=gc(t.id).map(c=>({...c,_uid:++mtColUid}));
@@ -159,6 +161,7 @@ async function submitTable(){
   const name=document.getElementById('mt-name').value.trim();
   if(!name){toast('Введите название','err');return;}
   const desc=document.getElementById('mt-desc').value.trim();
+  const note=document.getElementById('mt-note').value.trim();
   const cid=document.getElementById('mt-cat').value,aid=document.getElementById('mt-asg').value;
   // PK validation
   const pkCount=mtCols.filter(c=>typeIsPK(c.type_id)).length;
@@ -170,7 +173,7 @@ async function submitTable(){
     // OPTIMISTIC: instantly show table on canvas with temp id
     const wp=s2w(cv.width/2,cv.height/2);
     const tempId='tmp_'+Date.now();
-    const tempTable={id:tempId,schema_id:S.schema.id,name,description:desc,category_id:cid,assignment_id:aid,pos_x:wp.x-TW/2,pos_y:wp.y-60,create_date_time:new Date().toISOString(),update_date_time:new Date().toISOString(),_pending:true};
+    const tempTable={id:tempId,schema_id:S.schema.id,name,description:desc,note,category_id:cid,assignment_id:aid,pos_x:wp.x-TW/2,pos_y:wp.y-60,create_date_time:new Date().toISOString(),update_date_time:new Date().toISOString(),_pending:true};
     const tempCols=mtCols.map((c,i)=>({...c,id:'tmpcol_'+i+'_'+Date.now(),table_id:tempId,position:i+1,_pending:true}));
     S.tables.push(tempTable);tempCols.forEach(c=>{S.columns.push(c);});inv(tempId);
     S.table=tempTable;
@@ -183,7 +186,7 @@ async function submitTable(){
     
     // Background sync
     try{
-      const res=await api('createTableWithTemplate',{schema_id:S.schema.id,name,description:desc,category_id:cid,assignment_id:aid,pos_x:tempTable.pos_x,pos_y:tempTable.pos_y,apply_templates:false});
+      const res=await api('createTableWithTemplate',{schema_id:S.schema.id,name,description:desc,note,category_id:cid,assignment_id:aid,pos_x:originalPos_x,pos_y:originalPos_y,apply_templates:false});
       // Replace temp table with real - PRESERVE POSITION from original
       const idx=S.tables.findIndex(t=>t.id===tempId);
       if(idx>=0){
@@ -261,10 +264,9 @@ async function submitTable(){
     closeM('m-table');
     try{
       // 1. Update table metadata
-      const u=await api('updateTable',{id:editTid,name,description:desc,category_id:cid,assignment_id:aid});
+      const ut=await api('updateTable',{id:editTid,name,description:desc,note,category_id:cid,assignment_id:aid});
       const i=S.tables.findIndex(t=>String(t.id)===String(editTid));
-      if(i>=0) S.tables[i]={...S.tables[i],...u};
-      S.table=S.tables[i];
+      if(i>=0)S.tables[i]={...S.tables[i],name,description:desc,note,category_id:cid,assignment_id:aid};
 
       // 2. Prepare column synchronization
       const originalCols = gc(editTid);

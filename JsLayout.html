@@ -384,6 +384,7 @@ function renderProps(t,b){
   b.innerHTML=`
     <div class="fg"><label>Название</label><input id="pt-n" type="text" value="${ea(t.name)}" onchange="qsave()"/></div>
     <div class="fg"><label>Описание</label><textarea id="pt-d" onchange="qsave()">${esc(t.description||'')}</textarea></div>
+    <div class="fg"><label>Примечание (note)</label><textarea id="pt-note" onchange="qsave()">${esc(t.note||'')}</textarea></div>
     <div class="fg"><label>Категория</label><select id="pt-c" onchange="qsave()"><option value="">— нет —</option>${S.cats.map(c=>`<option value="${c.id}"${String(c.id)===String(t.category_id)?' selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
     <div class="fg"><label>Назначение</label><select id="pt-a" onchange="qsave()"><option value="">— нет —</option>${S.asgs.map(a=>`<option value="${a.id}"${String(a.id)===String(t.assignment_id)?' selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
     <button class="savebtn" onclick="qsave()">💾 Сохранить</button>
@@ -403,11 +404,12 @@ function qsave(){
   const t=S.table;if(!t)return;
   const n=document.getElementById('pt-n')?.value||t.name;
   const d=document.getElementById('pt-d')?.value||'';
+  const note=document.getElementById('pt-note')?.value||'';
   const c=document.getElementById('pt-c')?.value||'';
   const a=document.getElementById('pt-a')?.value||'';
-  t.name=n;t.description=d;t.category_id=c;t.assignment_id=a;
+  t.name=n;t.description=d;t.note=note;t.category_id=c;t.assignment_id=a;
   R();
-  api('updateTable',{id:t.id,name:n,description:d,category_id:c,assignment_id:a,pos_x:t.pos_x,pos_y:t.pos_y}).catch(e=>toast('Ошибка: '+e.message,'err'));
+  api('updateTable',{id:t.id,name:n,description:d,note:note,category_id:c,assignment_id:a,pos_x:t.pos_x,pos_y:t.pos_y}).catch(e=>toast('Ошибка: '+e.message,'err'));
 }
 
 function renderCols(t,b){

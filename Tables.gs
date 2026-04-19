@@ -1,5 +1,5 @@
 // ─── Tables ──────────────────────────────────────────────────
-const TABLE_HEADERS = ['id','schema_id','name','description','category_id','assignment_id','pos_x','pos_y','create_date_time','update_date_time'];
+const TABLE_HEADERS = ['id','schema_id','name','description','note','category_id','assignment_id','pos_x','pos_y','create_date_time','update_date_time'];
 
 function getTablesBySchema(p) {
   return _allRows(SHEETS.TABLES).filter(t => String(t.schema_id) === String(p.schema_id));
@@ -8,7 +8,7 @@ function getTablesBySchema(p) {
 function createTable(p) {
   const now = new Date().toISOString();
   const obj = { id: _nextId(SHEETS.TABLES), schema_id: p.schema_id, name: p.name || 'Новая таблица',
-    description: p.description || '', category_id: p.category_id || '', assignment_id: p.assignment_id || '',
+    description: p.description || '', note: p.note || '', category_id: p.category_id || '', assignment_id: p.assignment_id || '',
     pos_x: p.pos_x || 100, pos_y: p.pos_y || 100, create_date_time: now, update_date_time: now };
   return _appendRow(SHEETS.TABLES, obj, TABLE_HEADERS);
 }
