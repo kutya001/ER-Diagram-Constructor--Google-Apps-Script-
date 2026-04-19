@@ -347,37 +347,39 @@ function renderPanel(){
   const b=document.getElementById('pbody');
   if(!S.table){b.innerHTML='<p class="sm" style="margin-top:20px;text-align:center">Выберите таблицу</p>';return;}
   if(S.tab==='props')renderProps(S.table,b);
-  else if(S.tab==='cols')renderCols(S.table,b);
-  else renderRelsPanel(S.table,b);
+  else renderCols(S.table,b);
 }
 
-function renderRelsPanel(t,b){
+function renderRelsBlock(t){
   const outRels=S.columns.filter(c=>String(c.table_id)===String(t.id)&&isFK(c));
   const inRels=S.columns.filter(c=>isFK(c)&&String(c.fk_table_id)===String(t.id));
-  let html=`<div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Исходящие (FK → PK)</div>`;
+  let html=`<div style="margin-top:16px;padding-top:12px;border-top:2px solid var(--border)">
+    <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🔗 Связи таблицы</div>`;
+  
+  html+=`<div style="font-size:9px;font-weight:700;color:var(--t2);margin-bottom:6px">ИСХОДЯЩИЕ (FK → PK)</div>`;
   if(outRels.length){
     html+=outRels.map(c=>{
       const tgt=S.tables.find(t=>String(t.id)===String(c.fk_table_id));
       const tgtCol=S.columns.find(cc=>String(cc.id)===String(c.fk_column_id));
-      return`<div class="rel-row" style="margin-bottom:4px">
+      return`<div class="rel-row" style="margin-bottom:4px;padding:6px;background:var(--s2);border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;gap:8px">
         <div style="flex:1"><div style="font-size:11px;font-weight:700;color:var(--fk)">${esc(c.name)}</div><div class="sm">→ ${esc(tgt?.name||'?')}.${esc(tgtCol?.name||'?')}</div></div>
-        <button class="rel-del" onclick="rmRel('${c.id}')" title="Удалить связь">✕</button>
+        <button class="rel-del" onclick="rmRel('${c.id}')" title="Удалить связь" style="background:none;border:none;color:var(--red);cursor:pointer;padding:4px">✕</button>
       </div>`;
     }).join('');
-  } else html+='<div class="sm" style="padding:4px 0">Нет исходящих связей</div>';
+  } else html+='<div class="sm" style="padding:4px 0;opacity:.6">— нет исходящих</div>';
 
-  html+=`<div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px">Входящие (← FK из других)</div>`;
+  html+=`<div style="font-size:9px;font-weight:700;color:var(--t2);margin:12px 0 6px">ВХОДЯЩИЕ (← FK из других)</div>`;
   if(inRels.length){
     html+=inRels.map(c=>{
       const src=S.tables.find(t=>String(t.id)===String(c.table_id));
-      return`<div class="rel-row" style="margin-bottom:4px">
+      return`<div class="rel-row" style="margin-bottom:4px;padding:6px;background:var(--s2);border-radius:6px;border:1px solid var(--border)">
         <div style="flex:1"><div style="font-size:11px;font-weight:700;color:var(--accent)">${esc(src?.name||'?')}.${esc(c.name)}</div><div class="sm">→ эту таблицу</div></div>
       </div>`;
     }).join('');
-  } else html+='<div class="sm" style="padding:4px 0">Нет входящих связей</div>';
+  } else html+='<div class="sm" style="padding:4px 0;opacity:.6">— нет входящих</div>';
 
-  html+=`<div style="margin-top:12px"><button onclick="openRels()" style="width:100%;padding:6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:11px">🔗 Все связи схемы</button></div>`;
-  b.innerHTML=html;
+  html+=`<div style="margin-top:12px"><button onclick="openRels()" style="width:100%;padding:6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:11px;cursor:pointer">🔗 Все связи схемы</button></div></div>`;
+  return html;
 }
 
 function renderProps(t,b){
@@ -399,7 +401,6 @@ function renderProps(t,b){
     </div>`;
 }
 
-// Optimistic save: update state immediately, API in background
 function qsave(){
   const t=S.table;if(!t)return;
   const n=document.getElementById('pt-n')?.value||t.name;
@@ -414,34 +415,50 @@ function qsave(){
 
 function renderCols(t,b){
   const cols=gc(t.id);
-  const matched=S.tpls.filter(tpl=>!tpl.category_id||String(tpl.category_id)===String(t.category_id));
-  const tplBtns=matched.length?`<div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--border)"><div class="sm" style="font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Применить шаблон</div>${matched.map(tpl=>`<button onclick="applyTpl(${tpl.id})" style="width:100%;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:11px;text-align:left;display:flex;align-items:center;gap:6px;margin-bottom:2px" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"><span style="width:6px;height:6px;border-radius:50%;background:${catColor(tpl.category_id)};flex-shrink:0"></span><span style="flex:1">${esc(tpl.name)}</span><span class="sm">${S.tcols.filter(c=>String(c.template_id)===String(tpl.id)).length} кол.</span></button>`).join('')}</div>`:'';
-
-  b.innerHTML=`<ul class="col-list" id="col-list">${cols.map(c=>colItem(c)).join('')}</ul>
+  b.innerHTML=`
+    <table class="rp-table">
+      <thead>
+        <tr>
+          <th style="width:16px"></th>
+          <th class="td-name">Колонка</th>
+          <th>Описание</th>
+          <th>Прим.</th>
+          <th class="td-acts"></th>
+        </tr>
+      </thead>
+      <tbody id="rp-col-tbody">${cols.map(c=>colItem(c)).join('')}</tbody>
+    </table>
     <button class="addcol" onclick="openAddCol()">＋ Добавить колонку</button>
-    ${tplBtns}
-    <div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--border)"><p class="sm">💡 Потяните оранжевый ● (FK-колонка) к PK-колонке другой таблицы</p></div>`;
+    ${renderRelsBlock(t)}
+    <div style="margin-top:12px;padding-top:9px;border-top:1px solid var(--border)"><p class="sm" style="opacity:.6">💡 Потяните оранжевый ● к PK другой таблицы для создания связи</p></div>`;
   setupColDrag(cols);
 }
 
 function colItem(c){
   const ct=S.ctypes.find(t=>String(t.id)===String(c.type_id));
   const pk=isPK(c),fk=isFK(c),badge=pk?'PK':fk?'FK':(ct?ct.designation:'');
-  const fkt=fk&&c.fk_table_id?`<span style="color:var(--fk);font-size:9px"> →${esc(S.tables.find(t=>String(t.id)===String(c.fk_table_id))?.name||'?')}</span>`:'';
-  return `<li class="col-item" data-cid="${c.id}" draggable="true">
-    <span class="cbadge ${pk?'pk':fk?'fk':''}">${esc(badge)}</span>
-    <span class="cname">${esc(c.name)}${fkt}</span>
-    <div class="cacts">
-      <button onclick="openEditCol('${c.id}')">✏️</button>
+  const fkt=fk&&c.fk_table_id?`<div style="color:var(--fk);font-size:9px;font-weight:400;margin-top:1px;opacity:.8">→ ${esc(S.tables.find(t=>String(t.id)===String(c.fk_table_id))?.name||'?')}</div>`:'';
+  
+  return `<tr class="rp-col-row" data-cid="${c.id}" draggable="true">
+    <td class="drag-h">⠿</td>
+    <td class="td-name" title="${esc(c.name)}">
+      <span class="cbadge ${pk?'pk':fk?'fk':''}">${esc(badge)}</span>
+      ${esc(c.name)}${fkt}
+    </td>
+    <td class="td-desc" title="${ea(c.description||'—')}">${esc(c.description||'—')}</td>
+    <td class="td-note" title="${ea(c.note||'—')}">${esc(c.note||'—')}</td>
+    <td class="td-acts text-right">
+      <button onclick="openEditCol('${c.id}')" title="Редактировать">✏️</button>
       ${fk?`<button onclick="rmRel('${c.id}')" title="Удалить связь">🔗</button>`:''}
-      <button class="del" onclick="delCol('${c.id}')">✕</button>
-    </div></li>`;
+      <button class="del" onclick="delCol('${c.id}')" title="Удалить">✕</button>
+    </td>
+  </tr>`;
 }
 
 function setupColDrag(cols){
-  const list=document.getElementById('col-list');if(!list)return;
+  const list=document.getElementById('rp-col-tbody');if(!list)return;
   let ds=null;
-  list.querySelectorAll('.col-item').forEach(item=>{
+  list.querySelectorAll('.rp-col-row').forEach(item=>{
     item.addEventListener('dragstart',e=>{
       ds=item;
       item.classList.add('dragging');
@@ -449,16 +466,29 @@ function setupColDrag(cols){
       e.dataTransfer.setData('text/plain', '');
     });
     item.addEventListener('dragend',  ()=>{item.classList.remove('dragging');reorderCols();});
-    item.addEventListener('dragover', e=>{e.preventDefault();if(item!==ds){const r=item.getBoundingClientRect();list.insertBefore(ds,e.clientY<r.top+r.height/2?item:item.nextSibling);}});
+    item.addEventListener('dragover', e=>{
+      e.preventDefault();
+      if(item!==ds){
+        const r=item.getBoundingClientRect();
+        list.insertBefore(ds,e.clientY<r.top+r.height/2?item:item.nextSibling);
+      }
+    });
   });
 }
+
 async function reorderCols(){
-  const list=document.getElementById('col-list');if(!list)return;
+  const list=document.getElementById('rp-col-tbody');if(!list)return;
   const order=[];
-  list.querySelectorAll('.col-item').forEach((item,i)=>{order.push({id:item.dataset.cid,position:i+1});const c=S.columns.find(c=>String(c.id)===String(item.dataset.cid));if(c){c.position=i+1;inv(c.table_id);}});
+  list.querySelectorAll('.rp-col-row').forEach((item,i)=>{
+    const cid=item.dataset.cid;
+    order.push({id:cid,position:i+1});
+    const c=S.columns.find(c=>String(c.id)===String(cid));
+    if(c){c.position=i+1;inv(c.table_id);}
+  });
   api('reorderColumns',{order}).catch(()=>{});
   R();
 }
+
 async function rmRel(colId){
   const col=S.columns.find(c=>String(c.id)===String(colId));if(!col)return;
   col.is_fk=false;col.fk_table_id='';col.fk_column_id='';inv(col.table_id);

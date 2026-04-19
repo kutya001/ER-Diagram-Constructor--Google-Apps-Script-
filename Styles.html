@@ -203,6 +203,23 @@ select optgroup option{font-weight:400;color:var(--text);padding-left:8px}
   background:none;color:var(--t2);font-size:11px;margin-top:4px}
 .addcol:hover{border-color:var(--accent);color:var(--accent)}
 
+/* ── Right Panel Columns Table ── */
+.rp-table {width:100%;border-collapse:collapse;table-layout:fixed;margin-top:4px}
+.rp-table th {background:var(--s3);padding:4px 6px;text-align:left;font-size:9px;font-weight:700;
+  color:var(--t2);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
+.rp-table td {padding:4px 6px;font-size:11px;border-bottom:1px solid var(--border);
+  vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rp-table tr:last-child td {border-bottom:none}
+.rp-table tr:hover td {background:var(--s3)}
+.rp-table .drag-h {cursor:grab;color:var(--t2);width:16px;text-align:center;font-size:14px}
+.rp-table .td-name {font-weight:600;width:40%}
+.rp-table .td-desc,.rp-table .td-note {color:var(--t2);font-size:10px}
+.rp-table .td-acts {width:64px;text-align:right}
+.rp-table .td-acts button {background:none;color:var(--t2);padding:2px 4px;font-size:10px}
+.rp-table .td-acts button:hover {color:var(--accent)}
+.rp-table .td-acts .del:hover {color:var(--red)}
+.rp-table .dragging {opacity:.38;background:var(--accent)11}
+
 /* ════════════════════════ MODALS ═══════════════════════════ */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;
   display:flex;align-items:center;justify-content:center;
