@@ -71,10 +71,11 @@ function tplColRow(c){
   return `<div class="tcol-row" data-tid="${c.id}" draggable="true" style="padding:4px 8px;background:var(--s2);border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;gap:8px">
     <span class="dh" style="cursor:grab;color:var(--t2);font-size:14px">⠿</span>
     <span class="tcbadge ${bt}" style="min-width:24px;text-align:center">${esc(btx)}</span>
-    <input type="text" value="${ea(c.name)}" style="flex:1;font-size:12px;padding:3px 6px" onchange="updTplCol(${c.id},'name',this.value)"/>
-    <select style="width:100px;font-size:11px;padding:3px" onchange="updTplColType(${c.id},this.value)">
+    <input type="text" value="${ea(c.name)}" style="flex:1;font-size:12px;padding:3px 6px" placeholder="Название" onchange="updTplCol(${c.id},'name',this.value)"/>
+    <select style="width:90px;font-size:11px;padding:3px" onchange="updTplColType(${c.id},this.value)">
       <option value="">тип</option>${S.ctypes.map(t=>`<option value="${t.id}"${String(t.id)===String(c.type_id)?' selected':''}>${t.designation}</option>`).join('')}
     </select>
+    <input type="text" value="${ea(c.description||'')}" style="flex:1.5;font-size:12px;padding:3px 6px;opacity:.8" placeholder="Описание колонки" onchange="updTplCol(${c.id},'description',this.value)"/>
     <button onclick="delTplCol(${c.id})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 4px">✕</button>
   </div>`;
 }
