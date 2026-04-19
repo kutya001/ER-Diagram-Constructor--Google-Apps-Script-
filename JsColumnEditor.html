@@ -55,15 +55,17 @@ function loadFkCols(selC=''){
   const tid=document.getElementById('mc-fkt').value;
   const pks=S.columns.filter(c=>String(c.table_id)===String(tid)&&isPK(c));
   const fkcFg=document.getElementById('fkc-fg');
-  if(pks.length===1){
-    // Авто-выбор единственного PK - скрываем селект колонки
+  // Всегда скрываем выбор PK колонки по запросу пользователя (предполагаем 1 PK на таблицу)
+  if(fkcFg)fkcFg.style.display='none';
+
+  if(pks.length>0){
+    // Авто-выбор первого найденного PK
     document.getElementById('mc-fkc').innerHTML='<option value="'+pks[0].id+'">'+esc(pks[0].name)+'</option>';
     document.getElementById('mc-fkc').value=pks[0].id;
-    if(fkcFg)fkcFg.style.display='none';
-  }else{
-    // Несколько PK - показываем селект для выбора
-    document.getElementById('mc-fkc').innerHTML='<option value="">— PK колонка —</option>'+pks.map(c=>`<option value="${c.id}"${String(c.id)===String(selC)?' selected':''}>${esc(c.name)}</option>`).join('');
-    if(fkcFg)fkcFg.style.display='block';
+  }else if(tid){
+    // Нет PK в целевой таблице - предупреждаем
+    document.getElementById('mc-fkc').innerHTML='<option value="">— нет PK —</option>';
+    toast('Внимание: в целевой таблице не найден Primary Key','err');
   }
 }
 

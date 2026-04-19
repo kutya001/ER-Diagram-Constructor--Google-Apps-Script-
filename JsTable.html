@@ -242,7 +242,8 @@ async function submitTable(){
       
       // First add real columns, THEN remove temp ones — prevents blank flash
       newCols.forEach(c=>S.columns.push(c));
-      S.columns = S.columns.filter(c=>c.table_id !== tempId);
+      // Robust cleanup: remove all optimistic columns for this table
+      S.columns = S.columns.filter(c => String(c.table_id) !== String(res.table.id) || !String(c.id).startsWith('tmpcol_'));
       
       
       // Invalidate cache for both temp and real table IDs
