@@ -2,8 +2,8 @@
 
 ## ER Diagram Constructor
 
-**Версия:** 1.0  
-**Дата:** 12 апреля 2026  
+**Версия:** 1.1  
+**Дата:** 19 апреля 2026  
 **Платформа:** Google Apps Script Web App  
 
 ---
@@ -42,10 +42,10 @@ ER Diagram Constructor — визуальный конструктор Entity-Re
 | Управление схемами | Создание, копирование, удаление схем БД |
 | Интерактивный канвас | Drag & drop таблиц, zoom/pan, мини-карта |
 | Авторасположение | 5 алгоритмов компоновки таблиц |
-| Таблицы и колонки | Полный CRUD с типизацией (13 типов данных) |
-| Визуальные связи | FK-связи рисуются на канвасе перетаскиванием |
-| Шаблоны таблиц | Переиспользуемые шаблоны с предустановленными колонками |
-| Справочники | Управление категориями, назначениями, типами колонок |
+| Таблицы и колонки | Полный CRUD с типизацией (13 типов), поддержка **примечаний (note)** |
+| Визуальные связи | FK-связи рисуются на канвасе, **интеллектуальная подсветка** связанных объектов |
+| Шаблоны таблиц | Переиспользуемые шаблоны с предустановленными колонками и описанием колонок |
+| Справочники | Управление категориями (**с выбором цвета**), назначениями, типами колонок |
 | JSON экспорт/импорт | Экспорт и импорт схем, генерация AI-промптов |
 | Экспорт в Google Таблицу | Создание отдельной таблицы из схемы |
 | Sheet Builder | Управление листами Google Таблицы |
@@ -151,6 +151,7 @@ ER Diagram Constructor — визуальный конструктор Entity-Re
 |---------|-----|----------|
 | id | Integer | Первичный ключ |
 | name | String | Название категории |
+| color | String | Hex-код цвета для визуализации |
 | description | String | Описание |
 | create_date_time | ISO DateTime | Дата создания |
 | update_date_time | ISO DateTime | Дата обновления |
@@ -197,6 +198,7 @@ ER Diagram Constructor — визуальный конструктор Entity-Re
 | schema_id | Integer | FK → Схемы |
 | name | String | Название таблицы |
 | description | String | Описание |
+| note | String | Техническое примечание |
 | category_id | Integer | FK → Категории |
 | assignment_id | Integer | FK → Назначения |
 | pos_x | Number | Позиция на канвасе X |
@@ -380,7 +382,7 @@ ER Diagram Constructor — визуальный конструктор Entity-Re
 | `reorderTemplateColumns` | `{order: [{id, position}]}` | `true` |
 | `applyTemplate` | `{table_id, template_id}` | Массив добавленных колонок |
 | `getTemplatesForCategory` | `{category_id}` | Шаблоны категории + универсальные |
-| `createTableWithTemplate` | `{schema_id, name, description, category_id, assignment_id, pos_x, pos_y, apply_templates}` | `{table, addedColumns}` |
+| `createTableWithTemplate` | `{schema_id, name, description, note, category_id, assignment_id, pos_x, pos_y, apply_templates}` | `{table, addedColumns}` |
 
 #### Справочники (CRUD)
 
@@ -389,8 +391,8 @@ ER Diagram Constructor — визуальный конструктор Entity-Re
 | `createColumnType` | `{name, designation, description?}` | Объект типа |
 | `updateColumnType` | `{id, name, designation, description?}` | Обновлённый объект |
 | `deleteColumnType` | `{id}` | `true` |
-| `createCategory` | `{name, description?}` | Объект категории |
-| `updateCategory` | `{id, name, description?}` | Обновлённый объект |
+| `createCategory` | `{name, description?, color?}` | Объект категории |
+| `updateCategory` | `{id, name, description?, color?}` | Обновлённый объект |
 | `deleteCategory` | `{id}` | `true` |
 | `createAssignment` | `{name, description?}` | Объект назначения |
 | `updateAssignment` | `{id, name, description?}` | Обновлённый объект |
@@ -502,6 +504,7 @@ ER Diagram Constructor — визуальный конструктор Entity-Re
 2. Кривые Безье для FK-связей (с стрелками)
 3. Карточки таблиц (заголовок, категория, колонки, FK-маркеры)
 4. Черновик создаваемой связи (пунктирная линия)
+5. **Интеллектуальная подсветка (SI):** при выборе одной таблицы (`selTables.size === 1`) вычисляются `relTids` и `relCids`. Связанные линии и объекты подсвечиваются ярким цветом и свечением, остальные приглушаются (`ctx.globalAlpha = 0.45`).
 
 **Взаимодействие:**
 
