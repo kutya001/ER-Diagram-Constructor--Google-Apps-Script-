@@ -3,66 +3,159 @@
 // TEMPLATES MANAGER
 // ═══════════════════════════════════════════════════════════
 let actTpl=null;
-function openTplManager(){actTpl=null;renderTplList();document.getElementById('tpl-editor').innerHTML='<p class="sm" style="margin-top:24px;text-align:center">Выберите шаблон</p>';showM('m-tpls');}
 function ltcols(id){return S.tcols.filter(c=>String(c.template_id)===String(id)).sort((a,b)=>+a.position-+b.position);}
-function renderTplList(){
-  const el=document.getElementById('tpl-list');if(!el)return;el.innerHTML='';
-  S.tpls.forEach(tpl=>{
-    const d=document.createElement('div');d.className='tpl-item'+(String(tpl.id)===String(actTpl)?' on':'');
-    d.innerHTML=`<span class="tpl-dot" style="background:${catColor(tpl.category_id)}"></span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${esc(tpl.name)}</span><span class="sm">${ltcols(tpl.id).length}</span>`;
-    d.onclick=()=>{actTpl=tpl.id;renderTplList();renderTplEd(tpl);};el.appendChild(d);
-  });
+function renderTplBody(b){
+  actTpl=null;
+  b.innerHTML=`
+    <div style="display:flex;gap:12px;height:100%;overflow:hidden">
+      <div style="width:200px;flex-shrink:0;display:flex;flex-direction:column;gap:7px;border-right:1px solid var(--border);padding-right:10px">
+        <button class="savebtn" onclick="newTpl()" style="width:100%;font-size:12px">＋ Новый шаблон</button>
+        <div id="tpl-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:5px"></div>
+      </div>
+      <div id="tpl-editor" style="flex:1;overflow-y:auto;padding-left:4px">
+        <p class="sm" style="margin-top:24px;text-align:center">Выберите шаблон из списка слева</p>
+      </div>
+    </div>`;
+  renderTplList();
 }
+
+function renderTplList(){
+  const el=document.getElementById('tpl-list');if(!el)return;
+  el.innerHTML=S.tpls.map(tpl=>{
+    const cols=ltcols(tpl.id);
+    return `<div class="tpl-item${String(tpl.id)===String(actTpl)?' on':''}" onclick="setActTpl(${tpl.id})">
+      <span class="tpl-dot" style="background:${catColor(tpl.category_id)}"></span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${esc(tpl.name)}</span>
+      <span class="sm" style="opacity:.6">${cols.length}</span>
+    </div>`;
+  }).join('');
+}
+
+function setActTpl(id){
+  actTpl=id;
+  renderTplList();
+  const t=S.tpls.find(tpl=>String(tpl.id)===String(id));
+  if(t) renderTplEd(t);
+}
+
 function renderTplEd(tpl){
   const ed=document.getElementById('tpl-editor'),cols=ltcols(tpl.id);
   ed.innerHTML=`
-    <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:12px">
-      <div class="fg" style="margin:0"><label>Название</label><input id="te-n" type="text" value="${ea(tpl.name)}" style="width:100%"/></div>
-      <div class="fg" style="margin:0"><label>Категория (пусто = универсальный)</label>
-        <select id="te-c" style="width:100%;padding:6px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:12px">
-          <option value="">— Универсальный —</option>${S.cats.map(c=>`<option value="${c.id}"${String(c.id)===String(tpl.category_id)?' selected':''}>${esc(c.name)}</option>`).join('')}
-        </select></div>
-      <div class="fg" style="margin:0"><label>Описание</label><textarea id="te-d" rows="2" style="width:100%;padding:6px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:5px;font-size:12px;resize:vertical">${esc(tpl.description||'')}</textarea></div>
-      <div style="display:flex;gap:6px">
-        <button onclick="saveTplMeta(${tpl.id})" style="flex:1;padding:6px;background:var(--accent);color:#fff;border-radius:5px;font-weight:600;font-size:12px">💾 Сохранить</button>
-        <button onclick="delTpl(${tpl.id})" style="padding:6px 10px;background:var(--red);color:#fff;border-radius:5px;font-weight:600;font-size:12px">🗑</button>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="fg" style="margin:0"><label>Название</label><input id="te-n" type="text" value="${ea(tpl.name)}" onchange="saveTplMeta(${tpl.id})"/></div>
+        <div class="fg" style="margin:0"><label>Категория</label>
+          <select id="te-c" onchange="saveTplMeta(${tpl.id})">
+            <option value="">— Универсальный —</option>${S.cats.map(c=>`<option value="${c.id}"${String(c.id)===String(tpl.category_id)?' selected':''}>${esc(c.name)}</option>`).join('')}
+          </select></div>
+      </div>
+      <div class="fg" style="margin:0"><label>Описание шаблона</label>
+        <textarea id="te-d" rows="2" style="width:100%" onchange="saveTplMeta(${tpl.id})">${esc(tpl.description||'')}</textarea>
+      </div>
+      <div style="display:flex;justify-content:flex-end">
+        <button onclick="delTpl(${tpl.id})" style="padding:4px 10px;background:none;color:var(--red);border:1px solid var(--red);border-radius:5px;font-size:11px;font-weight:600">Удалить шаблон</button>
       </div>
     </div>
-    <div style="border-top:1px solid var(--border);padding-top:10px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
-        <span style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.5px">Колонки</span>
-        <button onclick="addTplCol(${tpl.id})" style="padding:3px 9px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:11px">＋</button>
+    <div style="border-top:1px solid var(--border);padding-top:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.5px">Колонки шаблона</span>
+        <button class="confirm" onclick="addTplCol(${tpl.id})" style="padding:3px 10px;font-size:11px">＋ Добавить</button>
       </div>
-      <div id="tcl">${cols.map(c=>tplColRow(c)).join('')}</div>
+      <div id="tcl" style="display:flex;flex-direction:column;gap:6px">${cols.map(c=>tplColRow(c)).join('')}</div>
     </div>`;
   setupTplDrag(cols,tpl.id);
 }
+
 function tplColRow(c){
   const pk=isPK(c),fk=isFK(c),bt=pk?'pk':fk?'fk':'',btx=pk?'PK':fk?'FK':(S.ctypes.find(t=>String(t.id)===String(c.type_id))?.designation||'');
-  return `<div class="tcol-row" data-tid="${c.id}" draggable="true">
-    <span class="dh">⠿</span><span class="tcbadge ${bt}">${esc(btx)}</span>
-    <input type="text" value="${ea(c.name)}" style="flex:1;padding:3px 6px;background:var(--s3);border:1px solid var(--border);color:var(--text);border-radius:3px;font-size:11px" onchange="updTplCol(${c.id},'name',this.value)"/>
-    <select style="padding:3px 4px;background:var(--s3);border:1px solid var(--border);color:var(--text);border-radius:3px;font-size:10px" onchange="updTplCol(${c.id},'type_id',this.value)">
+  return `<div class="tcol-row" data-tid="${c.id}" draggable="true" style="padding:4px 8px;background:var(--s2);border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;gap:8px">
+    <span class="dh" style="cursor:grab;color:var(--t2);font-size:14px">⠿</span>
+    <span class="tcbadge ${bt}" style="min-width:24px;text-align:center">${esc(btx)}</span>
+    <input type="text" value="${ea(c.name)}" style="flex:1;font-size:12px;padding:3px 6px" onchange="updTplCol(${c.id},'name',this.value)"/>
+    <select style="width:100px;font-size:11px;padding:3px" onchange="updTplColType(${c.id},this.value)">
       <option value="">тип</option>${S.ctypes.map(t=>`<option value="${t.id}"${String(t.id)===String(c.type_id)?' selected':''}>${t.designation}</option>`).join('')}
     </select>
-    <label style="display:flex;align-items:center;gap:2px;font-size:10px;cursor:pointer;white-space:nowrap"><input type="checkbox" ${pk?'checked':''} onchange="updTplCol(${c.id},'is_pk',this.checked)"> PK</label>
-    <label style="display:flex;align-items:center;gap:2px;font-size:10px;cursor:pointer;white-space:nowrap"><input type="checkbox" ${fk?'checked':''} onchange="updTplCol(${c.id},'is_fk',this.checked)"> FK</label>
-    <button onclick="delTplCol(${c.id})" style="padding:2px 5px;background:var(--red);color:#fff;border-radius:3px;font-size:10px">✕</button>
+    <button onclick="delTplCol(${c.id})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 4px">✕</button>
   </div>`;
 }
-async function saveTplMeta(id){
-  const n=document.getElementById('te-n').value.trim();if(!n){toast('Введите название','err');return;}
-  const u=await api('updateTemplate',{id,name:n,category_id:document.getElementById('te-c').value,description:document.getElementById('te-d').value.trim()}).catch(e=>{toast('Ошибка: '+e.message,'err');return null;});
-  if(u){const i=S.tpls.findIndex(t=>String(t.id)===String(id));if(i>=0)S.tpls[i]={...S.tpls[i],...u};}
-  toast('Сохранено','ok');renderTplList();
+
+async function updTplColType(id, tid){
+  const c=S.tcols.find(c=>String(c.id)===String(id));if(!c)return;
+  const type = S.ctypes.find(t=>String(t.id)===String(tid));
+  const des = (type?type.designation:'').toLowerCase();
+  const is_pk = des.includes('pk') || des==='serial' || des==='uuid_pk';
+  const is_fk = des.includes('fk');
+  c.type_id = tid; c.is_pk = is_pk; c.is_fk = is_fk;
+  await api('updateTemplateColumn',{id, type_id:tid, is_pk, is_fk});
+  const t=S.tpls.find(tpl=>String(tpl.id)===String(c.template_id));
+  if(t) renderTplEd(t);
 }
-async function newTpl(){const t=await api('createTemplate',{name:'Новый шаблон',category_id:'',description:''}).catch(e=>{toast('Ошибка: '+e.message,'err');return null;});if(!t)return;S.tpls.push(t);actTpl=t.id;renderTplList();renderTplEd(t);}
-async function delTpl(id){conf('Удалить шаблон?','',async()=>{await api('deleteTemplate',{id}).catch(()=>{});S.tpls=S.tpls.filter(t=>String(t.id)!==String(id));S.tcols=S.tcols.filter(c=>String(c.template_id)!==String(id));actTpl=null;renderTplList();document.getElementById('tpl-editor').innerHTML='<p class="sm" style="margin-top:24px;text-align:center">Выберите шаблон</p>';toast('Удалён','ok');});}
-async function addTplCol(tid){const c=await api('createTemplateColumn',{template_id:tid,name:'column',type_id:'',is_pk:false,is_fk:false}).catch(e=>{toast('Ошибка: '+e.message,'err');return null;});if(!c)return;S.tcols.push(c);const t=S.tpls.find(t=>String(t.id)===String(tid));if(t)renderTplEd(t);}
-async function updTplCol(id,f,v){const c=S.tcols.find(c=>String(c.id)===String(id));if(!c)return;c[f]=v;api('updateTemplateColumn',{id,[f]:v}).catch(()=>{});const t=S.tpls.find(t=>String(t.id)===String(c.template_id));if(t&&(f==='is_pk'||f==='is_fk'))renderTplEd(t);}
-async function delTplCol(id){const c=S.tcols.find(c=>String(c.id)===String(id));api('deleteTemplateColumn',{id}).catch(()=>{});S.tcols=S.tcols.filter(c=>String(c.id)!==String(id));if(c){const t=S.tpls.find(t=>String(t.id)===String(c.template_id));if(t)renderTplEd(t);}toast('Удалена','ok');}
-function setupTplDrag(cols,tid){const list=document.getElementById('tcl');if(!list)return;let ds=null;list.querySelectorAll('.tcol-row').forEach(row=>{row.addEventListener('dragstart',e=>{ds=row;row.style.opacity='.4';e.dataTransfer.effectAllowed='move';});row.addEventListener('dragend',()=>{row.style.opacity='1';saveTplOrder(tid);});row.addEventListener('dragover',e=>{e.preventDefault();if(row!==ds){const r=row.getBoundingClientRect();list.insertBefore(ds,e.clientY<r.top+r.height/2?row:row.nextSibling);}});});}
-async function saveTplOrder(tid){const list=document.getElementById('tcl');if(!list)return;const order=[];list.querySelectorAll('.tcol-row').forEach((row,i)=>{order.push({id:row.dataset.tid,position:i+1});const c=S.tcols.find(c=>String(c.id)===String(row.dataset.tid));if(c)c.position=i+1;});api('reorderTemplateColumns',{order}).catch(()=>{});}
-async function applyTpl(tid){if(!S.table)return;try{const a=await api('applyTemplate',{table_id:S.table.id,template_id:tid});if(a.length){a.forEach(c=>{S.columns.push(c);inv(c.table_id);});toast(`Добавлено ${a.length} колонок`,'ok');}else toast('Все колонки уже существуют','inf');R();renderPanel();}catch(e){toast('Ошибка: '+e.message,'err');}}
+
+async function saveTplMeta(id){
+  const n=document.getElementById('te-n').value.trim();if(!n)return;
+  const it = S.tpls.find(t=>String(t.id)===String(id));
+  const payload = {id, name:n, category_id:document.getElementById('te-c').value, description:document.getElementById('te-d').value.trim()};
+  if(it) Object.assign(it, payload);
+  await api('updateTemplate',payload).catch(e=>toast(e.message,'err'));
+  renderTplList();
+}
+
+async function newTpl(){
+  const t = await api('createTemplate', {name:'Новый шаблон', category_id:'', description:''});
+  if(t){S.tpls.push(t); actTpl=t.id; renderTplList(); renderTplEd(t);}
+}
+
+async function delTpl(id){
+  conf('Удалить шаблон?','Все колонки шаблона также будут удалены.',async()=>{
+    await api('deleteTemplate',{id});
+    S.tpls=S.tpls.filter(t=>String(t.id)!==String(id));
+    S.tcols=S.tcols.filter(c=>String(c.template_id)!==String(id));
+    actTpl=null; renderTplList();
+    document.getElementById('tpl-editor').innerHTML='<p class="sm" style="margin-top:24px;text-align:center">Выберите шаблон</p>';
+  });
+}
+
+async function addTplCol(tid){
+  const c = await api('createTemplateColumn', {template_id:tid, name:'column', type_id:'', is_pk:false, is_fk:false});
+  if(c){S.tcols.push(c); const t=S.tpls.find(t=>String(t.id)===String(tid)); if(t) renderTplEd(t);}
+}
+
+async function updTplCol(id, f, v){
+  const c=S.tcols.find(c=>String(c.id)===String(id)); if(!c)return;
+  c[f]=v; api('updateTemplateColumn',{id, [f]:v});
+}
+
+async function delTplCol(id){
+  const c=S.tcols.find(c=>String(c.id)===String(id)); if(!c)return;
+  await api('deleteTemplateColumn',{id});
+  S.tcols=S.tcols.filter(col=>String(col.id)!==String(id));
+  const t=S.tpls.find(t=>String(t.id)===String(c.template_id));
+  if(t) renderTplEd(t);
+}
+
+function setupTplDrag(cols,tid){
+  const list=document.getElementById('tcl');if(!list)return;
+  let ds=null;
+  list.querySelectorAll('.tcol-row').forEach(row=>{
+    row.addEventListener('dragstart', e=>{ds=row; row.style.opacity='.4';});
+    row.addEventListener('dragend', ()=>{row.style.opacity='1'; saveTplOrder(tid);});
+    row.addEventListener('dragover', e=>{
+      e.preventDefault();
+      if(row!==ds){
+        const r=row.getBoundingClientRect();
+        list.insertBefore(ds, e.clientY < r.top+r.height/2 ? row : row.nextSibling);
+      }
+    });
+  });
+}
+
+async function saveTplOrder(tid){
+  const list=document.getElementById('tcl'),order=[];
+  list.querySelectorAll('.tcol-row').forEach((row,i)=>{
+    const id=row.dataset.tid; order.push({id, position:i+1});
+    const c=S.tcols.find(col=>String(col.id)===String(id)); if(c) c.position=i+1;
+  });
+  api('reorderTemplateColumns',{order});
+}
 
 </script>

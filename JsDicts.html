@@ -3,15 +3,49 @@
 // DICTIONARIES
 // ═══════════════════════════════════════════════════════════
 let actDTab='cats';
-function openDicts(){actDTab='cats';renderDTabs();renderDBody();showM('m-dicts');}
+function openDicts(tab){actDTab=tab||'cats';renderDTabs();renderDBody();showM('m-dicts');}
 function renderDTabs(){document.querySelectorAll('.dtab').forEach(tab=>{tab.classList.toggle('on',tab.dataset.dt===actDTab);tab.onclick=()=>{actDTab=tab.dataset.dt;renderDTabs();renderDBody();};});}
-function renderDBody(){const b=document.getElementById('dict-body');if(!b)return;if(actDTab==='cats')dCats(b);else if(actDTab==='asgs')dAsgs(b);else dCts(b);}
-function dCats(b){b.innerHTML=S.cats.map(c=>`<div class="drow"><span class="dbadge" style="background:${catColor(c.id)}22;color:${catColor(c.id)}">${c.id}</span><span class="drow-name">${esc(c.name)}</span><span class="drow-desc">${esc(c.description||'')}</span><div class="dacts"><button onclick="dEdit('cats',${c.id})">✏️</button><button class="del" onclick="dDel('cats',${c.id},'${ea(c.name)}')">✕</button></div></div>`).join('')+`<div class="dadd"><input id="dc-n" type="text" placeholder="Название" style="flex:2"/><input id="dc-d" type="text" placeholder="Описание"/><button onclick="dAdd('cats')">＋</button></div>`;}
+function renderDBody(){
+  const b=document.getElementById('dict-body');if(!b)return;
+  b.innerHTML='';
+  if(actDTab==='cats')dCats(b);
+  else if(actDTab==='asgs')dAsgs(b);
+  else if(actDTab==='cts')dCts(b);
+  else if(actDTab==='tpls')renderTplBody(b);
+}
+function dCats(b){
+  b.innerHTML=S.cats.map(c=>`
+    <div class="drow">
+      <input type="color" value="${c.color||catColor(c.id)}" onchange="dColorClick('cats',${c.id},this.value)" style="width:24px;height:24px;padding:0;border:none;background:none;cursor:pointer;flex-shrink:0"/>
+      <span class="drow-name" style="color:${c.color||catColor(c.id)};font-weight:700">${esc(c.name)}</span>
+      <span class="drow-desc">${esc(c.description||'')}</span>
+      <div class="dacts"><button onclick="dEdit('cats',${c.id})">✏️</button><button class="del" onclick="dDel('cats',${c.id},'${ea(c.name)}')">✕</button></div>
+    </div>`).join('') +
+    `<div class="dadd">
+      <input id="dc-c" type="color" value="#4a90d9" style="width:30px;height:30px;padding:2px;border:none;background:none;cursor:pointer"/>
+      <input id="dc-n" type="text" placeholder="Название" style="flex:2"/>
+      <input id="dc-d" type="text" placeholder="Описание"/>
+      <button onclick="dAdd('cats')">＋</button>
+    </div>`;
+}
+function dColorClick(type,id,val){
+  const arr = type==='cats'?'cats':'tpls';
+  const item = S[arr].find(r=>String(r.id)===String(id));
+  if(item){
+    item.color=val;
+    api(type==='cats'?'updateCategory':'updateTemplate',{id,color:val}).catch(()=>{});
+    R();
+  }
+}
 function dAsgs(b){b.innerHTML=S.asgs.map(a=>`<div class="drow"><span class="dbadge">${a.id}</span><span class="drow-name">${esc(a.name)}</span><span class="drow-desc">${esc(a.description||'')}</span><div class="dacts"><button onclick="dEdit('asgs',${a.id})">✏️</button><button class="del" onclick="dDel('asgs',${a.id},'${ea(a.name)}')">✕</button></div></div>`).join('')+`<div class="dadd"><input id="da-n" type="text" placeholder="Название" style="flex:2"/><input id="da-d" type="text" placeholder="Описание"/><button onclick="dAdd('asgs')">＋</button></div>`;}
 function dCts(b){b.innerHTML=S.ctypes.map(t=>`<div class="drow"><span class="dbadge" style="background:var(--s3);color:var(--accent);font-family:monospace">${esc(t.designation)}</span><span class="drow-name">${esc(t.name)}</span><span class="drow-desc">${esc(t.description||'')}</span><div class="dacts"><button onclick="dEdit('cts',${t.id})">✏️</button><button class="del" onclick="dDel('cts',${t.id},'${ea(t.name)}')">✕</button></div></div>`).join('')+`<div class="dadd"><input id="dct-n" type="text" placeholder="Название (VARCHAR)" style="flex:2"/><input id="dct-s" type="text" placeholder="Обозн. (varchar)"/><input id="dct-d" type="text" placeholder="Описание"/><button onclick="dAdd('cts')">＋</button></div>`;}
 async function dAdd(type){
   try{
-    if(type==='cats'){const n=document.getElementById('dc-n').value.trim(),d=document.getElementById('dc-d').value.trim();if(!n){toast('Введите название','err');return;}const it=await api('createCategory',{name:n,description:d});S.cats.push(it);['dc-n','dc-d'].forEach(id=>document.getElementById(id).value='');}
+    if(type==='cats'){
+      const n=document.getElementById('dc-n').value.trim(),d=document.getElementById('dc-d').value.trim(),c=document.getElementById('dc-c').value;
+      if(!n){toast('Введите название','err');return;}
+      const it=await api('createCategory',{name:n,description:d,color:c});S.cats.push(it);['dc-n','dc-d'].forEach(id=>document.getElementById(id).value='');
+    }
     else if(type==='asgs'){const n=document.getElementById('da-n').value.trim(),d=document.getElementById('da-d').value.trim();if(!n){toast('Введите название','err');return;}const it=await api('createAssignment',{name:n,description:d});S.asgs.push(it);['da-n','da-d'].forEach(id=>document.getElementById(id).value='');}
     else{const n=document.getElementById('dct-n').value.trim(),s=document.getElementById('dct-s').value.trim().toLowerCase(),d=document.getElementById('dct-d').value.trim();if(!n||!s){toast('Введите название и обозначение','err');return;}const it=await api('createColumnType',{name:n,designation:s,description:d});S.ctypes.push(it);['dct-n','dct-s','dct-d'].forEach(id=>document.getElementById(id).value='');}
     toast('Добавлено','ok');renderDBody();
@@ -23,7 +57,9 @@ function dEdit(type,id){
   if(type!=='cts'){
     const n=prompt(cfg.l+' — Название:',item.name);if(n===null)return;
     const d=prompt('Описание:',item.description||'');if(d===null)return;
-    api(cfg.a,{id,name:n.trim(),description:d.trim()}).then(u=>{const i=S[cfg.arr].findindex(r=>String(r.id)===String(id));if(i>=0)S[cfg.arr][i]={...S[cfg.arr][i],...u};toast('Обновлено','ok');renderDBody();}).catch(e=>toast('Ошибка: '+e.message,'err'));
+    const clr=type==='cats'?prompt('Цвет (HEX):',item.color||catColor(item.id)):null;
+    if(clr!==null && type==='cats') item.color = clr;
+    api(cfg.a,{id,name:n.trim(),description:d.trim(),color:clr}).then(u=>{const i=S[cfg.arr].findIndex(r=>String(r.id)===String(id));if(i>=0)S[cfg.arr][i]={...S[cfg.arr][i],...u};toast('Обновлено','ok');renderDBody();R();}).catch(e=>toast('Ошибка: '+e.message,'err'));
   }else{
     const n=prompt('Название:',item.name);if(n===null)return;
     const s=prompt('Обозначение:',item.designation);if(s===null)return;

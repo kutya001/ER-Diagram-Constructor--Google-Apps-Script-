@@ -3,7 +3,11 @@
 // ═══════════════════════════════════════════════════════════
 function isTrue(v){return v===true||v==='true'||v==='TRUE';}
 const CAT_CLR=['#5b8dee','#27ae60','#e67e22','#e74c3c','#9b59b6','#1abc9c','#f39c12','#3498db'];
-function catColor(id){if(!id)return C.tbr;let h=0;for(const c of String(id)){h=Math.imul(31,h)+c.charCodeAt(0)|0;}return CAT_CLR[Math.abs(h)%CAT_CLR.length];}
+function catColor(id){
+  const c = S.cats.find(cat => String(cat.id) === String(id));
+  if(c && c.color) return c.color;
+  if(!id)return C.tbr;let h=0;for(const c of String(id)){h=Math.imul(31,h)+c.charCodeAt(0)|0;}return CAT_CLR[Math.abs(h)%CAT_CLR.length];
+}
 function trunc(s,n){return s&&s.length>n?s.slice(0,n)+'…':s||'';}
 function esc(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function ea(s){if(!s)return'';return String(s).replace(/"/g,'&quot;');}

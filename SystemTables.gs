@@ -1,5 +1,5 @@
 // ─── Categories / Assignments CRUD ───────────────────────────
-const CAT_HEADERS = ['id','name','description','create_date_time','update_date_time'];
+const CAT_HEADERS = ['id','name','description','color','create_date_time','update_date_time'];
 const ASG_HEADERS = ['id','name','description','create_date_time','update_date_time'];
 
 // ─── System tables: Column Types CRUD ────────────────────────
@@ -37,6 +37,7 @@ function createCategoryItem(p) {
   const now = new Date().toISOString();
   if (!p.name) throw new Error('Название обязательно');
   const obj = { id: _nextId(SHEETS.CATEGORIES), name: p.name, description: p.description || '',
+    color: p.color || '',
     create_date_time: now, update_date_time: now };
   return _appendRow(SHEETS.CATEGORIES, obj, CAT_HEADERS);
 }

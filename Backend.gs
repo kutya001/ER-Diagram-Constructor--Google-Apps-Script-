@@ -28,7 +28,7 @@ function initSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   const defs = {
-    [SHEETS.CATEGORIES]:    ['id','name','description','create_date_time','update_date_time'],
+    [SHEETS.CATEGORIES]:    ['id','name','description','color','create_date_time','update_date_time'],
     [SHEETS.ASSIGNMENTS]:   ['id','name','description','create_date_time','update_date_time'],
     [SHEETS.COL_TYPES]:     ['id','name','designation','description','create_date_time','update_date_time'],
     [SHEETS.SCHEMAS]:       ['id','name','description','copied_from','pos_x','pos_y','create_date_time','update_date_time'],
