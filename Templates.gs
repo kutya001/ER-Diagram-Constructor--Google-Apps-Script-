@@ -1,6 +1,6 @@
 // ─── Templates ───────────────────────────────────────────────
 const TPL_HEADERS  = ['id','name','category_id','description','create_date_time','update_date_time'];
-const TCOL_HEADERS = ['id','template_id','name','description','type_id','is_pk','is_fk','position','create_date_time','update_date_time'];
+const TCOL_HEADERS = ['id','template_id','name','description','note','type_id','is_pk','is_fk','position','create_date_time','update_date_time'];
 
 function getTemplateColumns(p) {
   return _allRows(SHEETS.TEMPLATE_COLS)
@@ -32,7 +32,7 @@ function createTemplateColumn(p) {
   const existing = getTemplateColumns({ template_id: p.template_id });
   const maxPos = existing.length ? Math.max(...existing.map(c => Number(c.position)||0)) : 0;
   const obj = { id: _nextId(SHEETS.TEMPLATE_COLS), template_id: p.template_id,
-    name: p.name || 'column', description: p.description || '',
+    name: p.name || 'column', description: p.description || '', note: p.note || '',
     type_id: p.type_id || '', is_pk: p.is_pk || false, is_fk: p.is_fk || false,
     position: p.position !== undefined ? p.position : maxPos + 1,
     create_date_time: now, update_date_time: now };
@@ -68,6 +68,7 @@ function applyTemplate(p) {
         table_id:    p.table_id,
         name:        tc.name,
         description: tc.description,
+        note:        tc.note,
         type_id:     tc.type_id,
         is_pk:       tc.is_pk,
         is_fk:       tc.is_fk,

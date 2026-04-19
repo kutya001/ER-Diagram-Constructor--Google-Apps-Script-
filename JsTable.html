@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 let tbMode='create',editTid=null;
 // Temporary column rows for new-table modal
-let mtCols=[]; // [{_uid, name, type_id, description, is_pk, is_fk, fk_table_id, fk_column_id}]
+let mtCols=[]; // [{_uid, name, type_id, description, note, is_pk, is_fk, fk_table_id, fk_column_id}]
 let mtColUid=0;
 
 function addTable(){
@@ -27,7 +27,7 @@ function openEditTable(t){
   document.getElementById('mt-note').value=t.note||'';
   fillCatAsg(t.category_id,t.assignment_id);
   // Load existing columns into mtCols for display (edit mode shows read-only grid)
-  const existing=gc(t.id).map(c=>({...c,_uid:++mtColUid}));
+  const existing=gc(t.id).map(c=>({...c, note: c.note||'', _uid:++mtColUid}));
   mtCols=existing;
   renderMtGrid();
   showM('m-table');
@@ -58,7 +58,7 @@ function loadTplCols(){
     const tcols=S.tcols.filter(c=>String(c.template_id)===String(tpl.id)).sort((a,b)=>+a.position-+b.position);
     tcols.forEach(c=>{
       if(!mtCols.find(r=>r.name===c.name))
-        mtCols.push({_uid:++mtColUid,name:c.name,type_id:c.type_id,description:c.description||'',is_pk:c.is_pk,is_fk:c.is_fk,fk_table_id:'',fk_column_id:''});
+        mtCols.push({_uid:++mtColUid,name:c.name,type_id:c.type_id,description:c.description||'',note:c.note||'',is_pk:c.is_pk,is_fk:c.is_fk,fk_table_id:'',fk_column_id:''});
     });
   });
   renderMtGrid();
@@ -98,6 +98,7 @@ function renderMtGrid(){
       </td>
       ${fkSel||''}
       <td><input type="text" value="${ea(col.description||'')}" placeholder="Описание" onchange="mtColChange(${col._uid},'description',this.value)"/></td>
+      <td><input type="text" value="${ea(col.note||'')}" placeholder="Примечание" onchange="mtColChange(${col._uid},'note',this.value)"/></td>
       <td><button class="del-col-btn" onclick="mtDelRow(${col._uid})" title="Удалить">✕</button></td>
     </tr>`;
   }).join('');
@@ -128,7 +129,7 @@ function mtFkTChange(uid,val){
   renderMtGrid();
 }
 function mtFkCChange(uid,val){const c=mtCols.find(r=>r._uid===uid);if(c)c.fk_column_id=val;}
-function mtAddRow(){mtCols.push({_uid:++mtColUid,name:'',type_id:'',description:'',is_pk:false,is_fk:false,fk_table_id:'',fk_column_id:''});renderMtGrid();}
+function mtAddRow(){mtCols.push({_uid:++mtColUid,name:'',type_id:'',description:'',note:'',is_pk:false,is_fk:false,fk_table_id:'',fk_column_id:''});renderMtGrid();}
 function mtDelRow(uid){mtCols=mtCols.filter(r=>r._uid!==uid);renderMtGrid();}
 
 function setupMtDrag(){
@@ -174,7 +175,7 @@ async function submitTable(){
     const wp=s2w(cv.width/2,cv.height/2);
     const tempId='tmp_'+Date.now();
     const tempTable={id:tempId,schema_id:S.schema.id,name,description:desc,note,category_id:cid,assignment_id:aid,pos_x:wp.x-TW/2,pos_y:wp.y-60,create_date_time:new Date().toISOString(),update_date_time:new Date().toISOString(),_pending:true};
-    const tempCols=mtCols.map((c,i)=>({...c,id:'tmpcol_'+i+'_'+Date.now(),table_id:tempId,position:i+1,_pending:true}));
+    const tempCols=mtCols.map((c,i)=>({...c,id:'tmpcol_'+i+'_'+Date.now(),table_id:tempId,position:i+1,note:c.note||'',_pending:true}));
     S.tables.push(tempTable);tempCols.forEach(c=>{S.columns.push(c);});inv(tempId);
     S.table=tempTable;
     closeM('m-table');R();MR();renderPanel();
@@ -218,6 +219,7 @@ async function submitTable(){
             table_id:res.table.id,
             name:c.name,
             description:c.description||'',
+            note:c.note||'',
             type_id:c.type_id,
             is_pk: isPk,
             is_fk: isFk,
@@ -287,6 +289,7 @@ async function submitTable(){
           table_id: editTid,
           name: c.name,
           description: c.description || '',
+          note: c.note || '',
           type_id: c.type_id || '',
           is_pk: c.is_pk || typeIsPK(c.type_id),
           is_fk: c.is_fk || typeIsFK(c.type_id),

@@ -27,6 +27,7 @@ function openAddCol(){
   document.getElementById('mc-title').textContent='Новая колонка';
   document.getElementById('mc-name').value='';
   document.getElementById('mc-desc').value='';
+  document.getElementById('mc-note').value='';
   fillTypesSel();fillFkTable();
   document.getElementById('mc-type-badge').textContent='';
   document.getElementById('fk-sec').style.display='none';
@@ -38,6 +39,7 @@ function openEditCol(cid){
   document.getElementById('mc-title').textContent='Редактировать';
   document.getElementById('mc-name').value=col.name;
   document.getElementById('mc-desc').value=col.description||'';
+  document.getElementById('mc-note').value=col.note||'';
   fillTypesSel(col.type_id);fillFkTable(col.fk_table_id,col.fk_column_id);
   onTypeChange();showM('m-col');
 }
@@ -71,7 +73,9 @@ function loadFkCols(selC=''){
 
 async function submitCol(){
   const name=document.getElementById('mc-name').value.trim();if(!name){toast('Введите название','err');return;}
-  const desc=document.getElementById('mc-desc').value.trim(),typeId=document.getElementById('mc-type').value;
+  const desc=document.getElementById('mc-desc').value.trim();
+  const note=document.getElementById('mc-note').value.trim();
+  const typeId=document.getElementById('mc-type').value;
   const ct=S.ctypes.find(t=>String(t.id)===String(typeId));
   const des=ct?ct.designation.toLowerCase():'';
   const pk=des==='pk',fk=des==='fk';
@@ -89,10 +93,10 @@ async function submitCol(){
   closeM('m-col');
   try{
     if(colMode==='create'){
-      const col=await api('createColumn',{table_id:S.table.id,name,description:desc,type_id:typeId,is_pk:pk,is_fk:fk,fk_table_id:fkt,fk_column_id:fkc});
+      const col=await api('createColumn',{table_id:S.table.id,name,description:desc,note,type_id:typeId,is_pk:pk,is_fk:fk,fk_table_id:fkt,fk_column_id:fkc});
       S.columns.push(col);inv(col.table_id);
     }else{
-      const u=await api('updateColumn',{id:editCid,name,description:desc,type_id:typeId,is_pk:pk,is_fk:fk,fk_table_id:fkt,fk_column_id:fkc});
+      const u=await api('updateColumn',{id:editCid,name,description:desc,note,type_id:typeId,is_pk:pk,is_fk:fk,fk_table_id:fkt,fk_column_id:fkc});
       const i=S.columns.findIndex(c=>String(c.id)===String(editCid));
       if(i>=0){S.columns[i]={...S.columns[i],...u};inv(S.columns[i].table_id);}
     }

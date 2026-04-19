@@ -1,5 +1,4 @@
-// ─── Columns ─────────────────────────────────────────────────
-const COL_HEADERS = ['id','table_id','name','description','type_id','is_pk','is_fk','fk_table_id','fk_column_id','position','create_date_time','update_date_time'];
+const COL_HEADERS = ['id','table_id','name','description','note','type_id','is_pk','is_fk','fk_table_id','fk_column_id','position','create_date_time','update_date_time'];
 
 function getColumnsByTable(p) {
   return _allRows(SHEETS.COLUMNS)
@@ -14,7 +13,7 @@ function createColumn(p) {
   // Валидация FK-цели
   if (isTrue(p.is_fk)) validateFkTarget(p.fk_table_id, p.fk_column_id);
   const obj = { id: _nextId(SHEETS.COLUMNS), table_id: p.table_id, name: p.name || 'column',
-    description: p.description || '', type_id: p.type_id || '', is_pk: p.is_pk || false,
+    description: p.description || '', note: p.note || '', type_id: p.type_id || '', is_pk: p.is_pk || false,
     is_fk: p.is_fk || false, fk_table_id: p.fk_table_id || '', fk_column_id: p.fk_column_id || '',
     position: p.position !== undefined ? p.position : maxPos + 1,
     create_date_time: now, update_date_time: now };

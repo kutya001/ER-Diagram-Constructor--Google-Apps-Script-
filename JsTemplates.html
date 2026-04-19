@@ -76,6 +76,7 @@ function tplColRow(c){
       <option value="">тип</option>${S.ctypes.map(t=>`<option value="${t.id}"${String(t.id)===String(c.type_id)?' selected':''}>${t.designation}</option>`).join('')}
     </select>
     <input type="text" value="${ea(c.description||'')}" style="flex:1.5;font-size:12px;padding:3px 6px;opacity:.8" placeholder="Описание колонки" onchange="updTplCol(${c.id},'description',this.value)"/>
+    <input type="text" value="${ea(c.note||'')}" style="flex:1.5;font-size:12px;padding:3px 6px;opacity:.8" placeholder="Примечание" onchange="updTplCol(${c.id},'note',this.value)"/>
     <button onclick="delTplCol(${c.id})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 4px">✕</button>
   </div>`;
 }
@@ -117,7 +118,7 @@ async function delTpl(id){
 }
 
 async function addTplCol(tid){
-  const c = await api('createTemplateColumn', {template_id:tid, name:'column', type_id:'', is_pk:false, is_fk:false});
+  const c = await api('createTemplateColumn', {template_id:tid, name:'column', type_id:'', is_pk:false, is_fk:false, note:''});
   if(c){S.tcols.push(c); const t=S.tpls.find(t=>String(t.id)===String(tid)); if(t) renderTplEd(t);}
 }
 
