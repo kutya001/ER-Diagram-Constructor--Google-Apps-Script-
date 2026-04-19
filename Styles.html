@@ -335,6 +335,15 @@ select optgroup option{font-weight:400;color:var(--text);padding-left:8px}
 .sync-detail-btn{position:relative;padding:5px 6px!important;min-width:0}
 #sync-details{position:fixed;top:54px;right:12px;width:340px;background:var(--surface);border:1px solid var(--border);
   border-radius:10px;box-shadow:var(--shadow);z-index:4000;padding:12px;font-size:12px;color:var(--text)}
+.log-row{padding:6px 0;border-bottom:1px solid var(--border);font-size:11px}
+.log-row:last-child{border-bottom:none}
+.log-meta{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
+.log-ts{color:var(--t2);font-family:monospace}
+.log-acts{display:flex;gap:4px}
+.log-btn{background:var(--s2);border:1px solid var(--border);color:var(--t2);padding:2px 5px;border-radius:4px;cursor:pointer;font-size:10px;transition:.1s}
+.log-btn:hover{background:var(--s3);border-color:var(--accent);color:var(--accent)}
+.log-btn.undo:hover{border-color:var(--orange);color:var(--orange)}
+.log-det{color:var(--t2);font-size:10px;word-break:break-all;max-height:34px;overflow:hidden;line-height:1.2}
 
 /* Старый класс для совместимости */
 .sync-spin{display:inline-block;animation:spin-sync 1s linear infinite}

@@ -37,9 +37,10 @@ const SQ = [];        // sync queue [{action, payload, resolve, reject}]
 let syncRunning=false,syncErrCount=0;
 let syncTO=null;
 
-function queueSync(action, payload){
+function queueSync(action, payload, preState=null){
   return new Promise((resolve,reject)=>{
-    SQ.push({action,payload,resolve,reject});
+    const logId = Date.now() + Math.random().toString(36).substr(2, 5);
+    SQ.push({logId, action, payload, preState, resolve, reject});
     clearTimeout(syncTO);
     setSyncState('pending');
     syncTO=setTimeout(flushSync, 1000);
@@ -59,9 +60,10 @@ function triggerSync(action, payload){
 }
 
 const syncLog=[];
-const SYNC_LOG_MAX=100;
-function logSync(action,ok,detail){
-  syncLog.unshift({ts:new Date(),action,ok,detail});
+const SYNC_LOG_MAX=50;
+function logSync(action,ok,detail,meta={}){
+  const entry = {id:meta.logId||Date.now(), ts:new Date(), action, ok, detail, payload:meta.payload, preState:meta.preState, resultId:meta.resultId};
+  syncLog.unshift(entry);
   if(syncLog.length>SYNC_LOG_MAX)syncLog.length=SYNC_LOG_MAX;
   renderSyncBadge();
 }
@@ -86,13 +88,14 @@ async function flushSync(){
         .processBatch(reqs);
     });
     batch.forEach((b,i)=>{
-      const resultObj = results[i];
-      if(resultObj && resultObj.ok === false) {
-        logSync(b.action, false, resultObj.error);
-        b.reject && b.reject(new Error(resultObj.error));
+      const res = results[i];
+      if(res && res.ok === false) {
+        logSync(b.action, false, res.error, {logId:b.logId, payload:b.payload, preState:b.preState});
+        b.reject && b.reject(new Error(res.error));
       } else {
-        logSync(b.action,true,JSON.stringify(b.payload).substring(0,120));
-        b.resolve&&b.resolve(resultObj ? resultObj.data : undefined);
+        const resultId = res && res.data && res.data.id ? res.data.id : null;
+        logSync(b.action, true, JSON.stringify(b.payload).substring(0,80), {logId:b.logId, payload:b.payload, preState:b.preState, resultId});
+        b.resolve && b.resolve(res ? res.data : undefined);
       }
     });
     syncErrCount=0;
@@ -158,22 +161,74 @@ function toggleSyncDetails(){
   if(panel){panel.remove();return;}
   panel=document.createElement('div');
   panel.id='sync-details';
-  let html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>История синхронизации</b><button onclick="this.parentElement.parentElement.remove()" style="background:none;color:var(--t2);border:none;cursor:pointer;font-size:16px">✕</button></div>';
+  let html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>История синхронизации</b><button onclick="this.parentElement.parentElement.remove()" style="background:none;color:var(--t2);border:none;cursor:pointer;font-size:16px">✕</button></div>';
   if(!syncLog.length){html+='<div style="color:var(--t2);font-size:11px">Нет записей</div>';}
   else{
-    html+='<div style="max-height:300px;overflow-y:auto">';
+    html+='<div style="max-height:450px;overflow-y:auto;padding-right:4px">';
     syncLog.forEach(e=>{
       const t=e.ts.toLocaleTimeString();
       const icon=e.ok?'✅':'❌';
-      html+=`<div style="padding:3px 0;border-bottom:1px solid var(--border);font-size:11px">
-        <span style="color:var(--t2)">${t}</span> ${icon} <b>${esc(e.action)}</b>
-        <div style="color:var(--t2);font-size:10px;word-break:break-all;max-height:40px;overflow:hidden">${esc(e.detail)}</div>
+      html+=`<div class="log-row" id="log-${e.id}">
+        <div class="log-meta">
+          <div><span class="log-ts">${t}</span> ${icon} <b>${esc(e.action)}</b></div>
+          <div class="log-acts">
+            <button class="log-btn" onclick="syncRetry('${e.id}')" title="Повторить">♻️</button>
+            ${e.ok?`<button class="log-btn undo" onclick="syncUndo('${e.id}')" title="Отменить">↩️</button>`:''}
+          </div>
+        </div>
+        <div class="log-det">${esc(e.detail)}</div>
       </div>`;
     });
     html+='</div>';
   }
   panel.innerHTML=html;
   document.body.appendChild(panel);
+}
+
+function syncRetry(logId){
+  const e=syncLog.find(l=>String(l.id)===String(logId));
+  if(!e)return;
+  toast('Повтор: '+e.action, 'inf');
+  api(e.action, e.payload);
+}
+
+async function syncUndo(logId){
+  const e=syncLog.find(l=>String(l.id)===String(logId));
+  if(!e||!e.ok)return;
+  
+  const a=e.action;
+  const p=e.payload;
+  const pre=e.preState;
+  
+  try {
+    if(a==='updateTable'||a==='updateColumn'||a==='updateCategory'||a==='updateAssignment'||a==='updateTemplate') {
+      if(!pre){toast('Нет данных для отмены','err'); return;}
+      toast('Отмена изменений...','inf');
+      await api(a, pre);
+    } 
+    else if(a==='createTable'||a==='createColumn') {
+      const id = e.resultId;
+      if(!id){toast('Не найден ID для удаления','err'); return;}
+      toast('Удаление созданного объекта...','inf');
+      await api(a.replace('create','delete'), {id});
+      if(a==='createTable') { selTables.delete(id); R(); MR(); renderPanel(); }
+    }
+    else if(a==='deleteTable') {
+      if(!pre){toast('Нет данных для восстановления','err'); return;}
+      toast('Восстановление таблицы...','inf');
+      await api('createTable', pre); // createTable on server handles existing IDs if passed (usually)
+    }
+    else if(a==='deleteColumn') {
+      if(!pre){toast('Нет данных для восстановления','err'); return;}
+      toast('Восстановление колонки...','inf');
+      await api('createColumn', pre);
+    }
+    else {
+      toast('Для данного действия отмена не реализована','err');
+    }
+  } catch(err) {
+    toast('Ошибка отмены: '+err.message, 'err');
+  }
 }
 
 /** Повторить сохранение локальных действий, которые не удалось отправить */
@@ -244,8 +299,15 @@ const api=(action,p={})=>{
         .processRequest(action,p);
     });
   } else {
-    // Smart Sync: automatically queue all mutations
-    return queueSync(action, p);
+    // Capture preState for reversible actions
+    let pre = null;
+    if(action==='updateTable'||action==='deleteTable') pre = S.tables.find(t=>String(t.id)===String(p.id));
+    if(action==='updateColumn'||action==='deleteColumn') pre = S.columns.find(c=>String(c.id)===String(p.id));
+    if(action==='updateCategory') pre = S.cats.find(c=>String(c.id)===String(p.id));
+    if(action==='updateAssignment') pre = S.asgs.find(a=>String(a.id)===String(p.id));
+    if(pre) pre = JSON.parse(JSON.stringify(pre)); // Deep clone
+    
+    return queueSync(action, p, pre);
   }
 };
 const apiBatch=reqs=>new Promise((res,rej)=>{
