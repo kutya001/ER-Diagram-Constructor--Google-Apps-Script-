@@ -36,9 +36,18 @@ function copySchema(p) {
   const now = new Date().toISOString();
   const src = _allRows(SHEETS.SCHEMAS).find(s => String(s.id) === String(p.id));
   if (!src) throw new Error('Schema not found');
-  const newSchema = { id: _nextId(SHEETS.SCHEMAS), name: src.name + ' (копия)', description: src.description,
-    copied_from: src.id, pos_x: (src.pos_x || 0) + 20, pos_y: (src.pos_y || 0) + 20,
-    create_date_time: now, update_date_time: now };
+
+  const newSchemaId = _nextId(SHEETS.SCHEMAS);
+  const newSchema = { 
+    id: newSchemaId, 
+    name: src.name + ' (копия)', 
+    description: src.description,
+    copied_from: src.id, 
+    pos_x: (src.pos_x || 0) + 20, 
+    pos_y: (src.pos_y || 0) + 20,
+    create_date_time: now, 
+    update_date_time: now 
+  };
   _appendRow(SHEETS.SCHEMAS, newSchema, SCHEMA_HEADERS);
 
   const srcTables = getTablesBySchema({ schema_id: p.id });
@@ -46,50 +55,82 @@ function copySchema(p) {
 
   const tblSh = _sheet(SHEETS.TABLES);
   const colSh = _sheet(SHEETS.COLUMNS);
-  let tblId = _nextId(SHEETS.TABLES);
-  let colId = _nextId(SHEETS.COLUMNS);
+  let tblIdCounter = _nextId(SHEETS.TABLES);
+  let colIdCounter = _nextId(SHEETS.COLUMNS);
 
   const tableIdMap = {};
   const colIdMap   = {};
 
+  // 1. Prepare table rows safely using TABLE_HEADERS
   const tblRows = srcTables.map(t => {
-    const newId = tblId++;
+    const newId = tblIdCounter++;
     tableIdMap[String(t.id)] = newId;
-    return [newId, newSchema.id, t.name, t.description||'', t.category_id||'', t.assignment_id||'',
-            t.pos_x||100, t.pos_y||100, now, now];
+    const obj = {
+      ...t,
+      id: newId,
+      schema_id: newSchemaId,
+      create_date_time: now,
+      update_date_time: now
+    };
+    return TABLE_HEADERS.map(h => obj[h] !== undefined ? obj[h] : '');
   });
 
+  // 2. Prepare column rows safely using COL_HEADERS
   const colRows = [];
-  const fkNeeds = [];
+  const fkNeeds = []; // { rowIdx, fkTableId, fkColId }
+  
   srcTables.forEach(t => {
     const cols = getColumnsByTable({ table_id: t.id });
     const newTableId = tableIdMap[String(t.id)];
+    
     cols.forEach(c => {
-      const newCId = colId++;
+      const newCId = colIdCounter++;
       colIdMap[String(c.id)] = newCId;
-      colRows.push([newCId, newTableId, c.name, c.description||'', c.type_id||'',
-                    c.is_pk, c.is_fk, '', '', c.position||1, now, now]);
-      if(c.is_fk && c.fk_table_id){
-        fkNeeds.push({rowIdx:colRows.length-1, fkTableId:String(c.fk_table_id), fkColId:String(c.fk_column_id||'')});
+      
+      const obj = {
+        ...c,
+        id: newCId,
+        table_id: newTableId,
+        fk_table_id: '', // Reset initially, will resolve in next pass
+        fk_column_id: '',
+        create_date_time: now,
+        update_date_time: now
+      };
+      
+      const rowIdx = colRows.length;
+      colRows.push(COL_HEADERS.map(h => obj[h] !== undefined ? obj[h] : ''));
+      
+      if (isTrue(c.is_fk) && c.fk_table_id) {
+        fkNeeds.push({
+          rowIdx: rowIdx,
+          fkTableId: String(c.fk_table_id),
+          fkColId: String(c.fk_column_id || '')
+        });
       }
     });
   });
 
-  fkNeeds.forEach(({rowIdx,fkTableId,fkColId})=>{
+  // 3. Resolve Foreign Keys
+  const fkTableIdx = COL_HEADERS.indexOf('fk_table_id');
+  const fkColIdx = COL_HEADERS.indexOf('fk_column_id');
+  
+  fkNeeds.forEach(({rowIdx, fkTableId, fkColId}) => {
     const newTId = tableIdMap[fkTableId] || '';
     const newCId = colIdMap[fkColId] || '';
-    colRows[rowIdx][7] = newTId;
-    colRows[rowIdx][8] = newCId;
+    if (fkTableIdx !== -1) colRows[rowIdx][fkTableIdx] = newTId;
+    if (fkColIdx !== -1) colRows[rowIdx][fkColIdx] = newCId;
   });
 
-  if(tblRows.length){
-    const startT = tblSh.getLastRow()+1;
-    tblSh.getRange(startT,1,tblRows.length,tblRows[0].length).setValues(tblRows);
+  // 4. Batch insert
+  if (tblRows.length) {
+    const startT = tblSh.getLastRow() + 1;
+    tblSh.getRange(startT, 1, tblRows.length, tblRows[0].length).setValues(tblRows);
   }
-  if(colRows.length){
-    const startC = colSh.getLastRow()+1;
-    colSh.getRange(startC,1,colRows.length,colRows[0].length).setValues(colRows);
+  if (colRows.length) {
+    const startC = colSh.getLastRow() + 1;
+    colSh.getRange(startC, 1, colRows.length, colRows[0].length).setValues(colRows);
   }
+  
   return newSchema;
 }
 
