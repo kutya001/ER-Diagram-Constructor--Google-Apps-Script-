@@ -27,6 +27,13 @@ function updateColumn(p) {
 }
 
 function deleteColumn(p) {
+  // 1. Clear all FK references to this column in other tables
+  const dependentCols = _allRows(SHEETS.COLUMNS).filter(c => String(c.fk_column_id) === String(p.id));
+  dependentCols.forEach(c => {
+    _updateRow(SHEETS.COLUMNS, c.id, { is_fk: false, fk_table_id: '', fk_column_id: '' }, COL_HEADERS);
+  });
+
+  // 2. Delete the column itself
   return _deleteRow(SHEETS.COLUMNS, p.id);
 }
 

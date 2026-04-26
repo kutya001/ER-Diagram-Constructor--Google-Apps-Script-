@@ -152,6 +152,10 @@ async function renderJsonExport(){
   const b=document.getElementById('json-tab-body');
   b.innerHTML='<div style="text-align:center;padding:20px;color:var(--t2)">⏳ Загрузка…</div>';
   try{
+    if(SQ.length>0||syncRunning){
+      b.innerHTML='<div style="text-align:center;padding:20px;color:var(--accent)">⏳ Синхронизация изменений…</div>';
+      await syncNow();
+    }
     jData=await api('exportSchemaJson',{schema_id:S.schema.id});
     const meta=[{l:'Таблиц',v:jData.meta.table_count},{l:'Колонок',v:jData.meta.column_count},{l:'Связей',v:jData.meta.relation_count}];
     b.innerHTML=`
@@ -329,6 +333,13 @@ async function buildAiPromptWithSchema(){
   if(!aceEditors['ace-ai-prompt'])return;
   setAceVal('ace-ai-prompt', '⏳ Подготовка промта…');
   try{
+    if(SQ.length>0||syncRunning) await syncNow();
+    
+    // Refresh jData if needed for context
+    if(S.schema && !jData) {
+      jData = await api('exportSchemaJson',{schema_id:S.schema.id});
+    }
+    
     // Gather system data for context
     const sysData={
       categories: S.cats.map(c=>({id:c.id,name:c.name})),
@@ -344,7 +355,6 @@ async function buildAiPromptWithSchema(){
     const prompt=AI_PROMPT_TEMPLATE
       .replace('{{SYSTEM_DATA}}',JSON.stringify(sysData,null,2))
       .replace('{{CURRENT_SCHEMA}}',currentSchemaStr);
-    ta.value=prompt;
     setAceVal('ace-ai-prompt', prompt);
   }catch(e){setAceVal('ace-ai-prompt', 'Ошибка: '+e.message);}
 }

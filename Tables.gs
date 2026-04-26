@@ -18,7 +18,16 @@ function updateTable(p) {
 }
 
 function deleteTable(p) {
+  // 1. Delete all columns of this table
   _batchDeleteWhere(SHEETS.COLUMNS, r => String(r.table_id) === String(p.id));
+  
+  // 2. Clear all FK references to this table in other tables
+  const dependentCols = _allRows(SHEETS.COLUMNS).filter(c => String(c.fk_table_id) === String(p.id));
+  dependentCols.forEach(c => {
+    _updateRow(SHEETS.COLUMNS, c.id, { is_fk: false, fk_table_id: '', fk_column_id: '' }, COL_HEADERS);
+  });
+
+  // 3. Delete the table itself
   return _deleteRow(SHEETS.TABLES, p.id);
 }
 

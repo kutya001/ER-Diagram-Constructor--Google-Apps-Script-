@@ -316,15 +316,26 @@ async function submitTable(){
             .processBatch(actions);
         });
 
-        // 3. Update local state S.columns
-        // Remove deleted and old versions of updated columns
-        const updatedIds = actions.filter(a => a.action === 'updateColumn' || a.action === 'deleteColumn').map(a => a.payload.id);
-        S.columns = S.columns.filter(c => String(c.table_id) !== String(editTid) || !updatedIds.includes(c.id));
-        
-        // Add new and updated columns from results
-        batchResults.forEach(res => {
-          if (res.ok && res.data && res.data.id) { // create/update return row
-            S.columns.push(res.data);
+        // 3. Update local state S.columns safely
+        batchResults.forEach((res, index) => {
+          const action = actions[index];
+          if (action.action === 'deleteColumn') {
+            if (res.ok) {
+              // Successfully deleted
+              S.columns = S.columns.filter(c => String(c.id) !== String(action.payload.id));
+            }
+          } else if (action.action === 'updateColumn') {
+            if (res.ok && res.data) {
+              // Successfully updated: replace old version with new
+              const idx = S.columns.findIndex(c => String(c.id) === String(action.payload.id));
+              if (idx >= 0) S.columns[idx] = res.data;
+            }
+            // If failed, we keep the old version in S.columns
+          } else if (action.action === 'createColumn') {
+            if (res.ok && res.data) {
+              // Successfully created
+              S.columns.push(res.data);
+            }
           }
         });
       }

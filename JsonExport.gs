@@ -33,16 +33,23 @@ function exportSchemaJson(p) {
       if (colObj.is_fk && c.fk_table_id) {
         const fkTable = tables.find(ft => String(ft.id) === String(c.fk_table_id));
         const fkCol   = allColumns.find(fc => String(fc.id) === String(c.fk_column_id));
-        colObj.fk_table  = fkTable ? fkTable.name : c.fk_table_id;
-        colObj.fk_column = fkCol   ? fkCol.name   : c.fk_column_id;
-        // Collect relation
-        relations.push({
-          from_table:  t.name,
-          from_column: c.name,
-          to_table:    colObj.fk_table,
-          to_column:   colObj.fk_column,
-          type:        'many_to_one',
-        });
+        if (fkTable && fkCol) {
+          colObj.fk_table  = fkTable.name;
+          colObj.fk_column = fkCol.name;
+          // Collect relation
+          relations.push({
+            from_table:  t.name,
+            from_column: c.name,
+            to_table:    colObj.fk_table,
+            to_column:   colObj.fk_column,
+            type:        'many_to_one',
+          });
+        } else {
+          // Orphaned FK - downgrade to regular column in export
+          colObj.is_fk = false;
+          colObj.fk_table = '';
+          colObj.fk_column = '';
+        }
       }
       return colObj;
     });
