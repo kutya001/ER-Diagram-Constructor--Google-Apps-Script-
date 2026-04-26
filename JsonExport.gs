@@ -58,6 +58,7 @@ function exportSchemaJson(p) {
       id:          t.id,
       name:        t.name,
       description: t.description,
+      note:        t.note || '',
       category:    cat ? cat.name : '',
       assignment:  asg ? asg.name : '',
       position:    { x: Number(t.pos_x)||0, y: Number(t.pos_y)||0 },
@@ -238,8 +239,8 @@ function importSchemaJson(p) {
   // STEP 4 — Build ALL table & column rows in memory
   //          FK references resolved in memory → no 3rd pass
   // ══════════════════════════════════════════════════════════
-  const TBL_COLS = 10; // id,schema_id,name,description,category_id,assignment_id,pos_x,pos_y,cdt,udt
-  const COL_COLS = 12; // id,table_id,name,description,type_id,is_pk,is_fk,fk_table_id,fk_column_id,position,cdt,udt
+  const TBL_COLS = 11; // id,schema_id,name,description,note,category_id,assignment_id,pos_x,pos_y,cdt,udt
+  const COL_COLS = 13; // id,table_id,name,description,note,type_id,is_pk,is_fk,fk_table_id,fk_column_id,position,cdt,udt
 
   // Re-read max IDs after potential batch-delete
   // (We deleted rows above; allTables/allColumns still hold old data, so re-compute from sheets)
@@ -267,7 +268,7 @@ function importSchemaJson(p) {
     const asgId = resolveAssignment(t.assignment || '');
     const px = (t.position && t.position.x != null) ? Number(t.position.x) : (tIdx % gridCols) * 280 + 60;
     const py = (t.position && t.position.y != null) ? Number(t.position.y) : Math.floor(tIdx / gridCols) * 220 + 60;
-    tableRows.push([tableCounter, schemaId, t.name, t.description || '', catId, asgId, px, py, now, now]);
+    tableRows.push([tableCounter, schemaId, t.name, t.description || '', t.note || '', catId, asgId, px, py, now, now]);
   });
 
   // ── Pass B: assign column IDs, resolve FKs in memory ──
@@ -280,9 +281,9 @@ function importSchemaJson(p) {
       const isFk   = isTrue(col.is_fk) || col.type === 'fk';
       colIdByKey[t.name + '\x00' + col.name] = colCounter;
       const rowIdx = colRows.length;
-      colRows.push([colCounter, tableId, col.name, col.description || '',
+      colRows.push([colCounter, tableId, col.name, col.description || '', col.note || '',
                     typeId, isPk, isFk,
-                    '', '',  // fk_table_id, fk_column_id — patched below
+                    '', '',  // fk_table_id, fk_column_id — patched in Pass C
                     pos + 1, now, now]);
       if (isFk && (col.fk_table || col.fk_column)) {
         colFkNeeds.push({ rowIdx, fkTable: col.fk_table || '', fkCol: col.fk_column || '' });
@@ -291,12 +292,15 @@ function importSchemaJson(p) {
   });
 
   // ── Pass C: patch FK fields in-memory (zero extra API calls) ──
+  // Используем COL_HEADERS.indexOf вместо хардкода — защита от будущих изменений схемы
+  const fkTableIdx = COL_HEADERS.indexOf('fk_table_id');   // текущий индекс: 8
+  const fkColIdx   = COL_HEADERS.indexOf('fk_column_id');  // текущий индекс: 9
   colFkNeeds.forEach(({ rowIdx, fkTable, fkCol }) => {
     const fkTableId = tableMap[fkTable];
     if (!fkTableId) return;
-    const fkColId   = colIdByKey[fkTable + '\x00' + fkCol] || '';
-    colRows[rowIdx][7] = fkTableId;  // fk_table_id  (column index 7)
-    colRows[rowIdx][8] = fkColId;    // fk_column_id (column index 8)
+    const fkColId = colIdByKey[fkTable + '\x00' + fkCol] || '';
+    colRows[rowIdx][fkTableIdx] = fkTableId;
+    colRows[rowIdx][fkColIdx]   = fkColId;
   });
 
   // ══════════════════════════════════════════════════════════

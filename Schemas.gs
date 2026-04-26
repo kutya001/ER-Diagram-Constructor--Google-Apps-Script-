@@ -33,124 +33,151 @@ function deleteSchema(p) {
 }
 
 function copySchema(p) {
-  const now = new Date().toISOString();
-  const src = _allRows(SHEETS.SCHEMAS).find(s => String(s.id) === String(p.id));
-  if (!src) throw new Error('Schema not found');
-
-  const newSchemaId = _nextId(SHEETS.SCHEMAS);
-  const newSchema = { 
-    id: newSchemaId, 
-    name: src.name + ' (копия)', 
-    description: src.description,
-    copied_from: src.id, 
-    pos_x: (src.pos_x || 0) + 20, 
-    pos_y: (src.pos_y || 0) + 20,
-    create_date_time: now, 
-    update_date_time: now 
-  };
-  _appendRow(SHEETS.SCHEMAS, newSchema, SCHEMA_HEADERS);
-
-  const srcTables = getTablesBySchema({ schema_id: p.id });
-  if (!srcTables.length) return newSchema;
-
-  const tblSh = _sheet(SHEETS.TABLES);
-  const colSh = _sheet(SHEETS.COLUMNS);
-  let tblIdCounter = _nextId(SHEETS.TABLES);
-  let colIdCounter = _nextId(SHEETS.COLUMNS);
-
-  const tableIdMap = {};
-  const colIdMap   = {};
-
-  // 1. Подготовка строк таблиц
-  const tblRows = srcTables.map(t => {
-    const newId = tblIdCounter++;
-    tableIdMap[String(t.id)] = newId;
-    const obj = {
-      ...t,
-      id: newId,
-      schema_id: newSchemaId,
-      create_date_time: now,
-      update_date_time: now
-    };
-    return TABLE_HEADERS.map(h => obj[h] !== undefined ? obj[h] : '');
-  });
-
-  // 2. Подготовка строк колонок
-  const colRows = [];
-  const fkNeeds = [];
+  Logger.log('copySchema: ' + JSON.stringify(p));
   
-  srcTables.forEach(t => {
-    const cols = getColumnsByTable({ table_id: t.id });
-    const newTableId = tableIdMap[String(t.id)];
+  // Защита от состояния гонки
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000); 
+
+  try {
+    const now = new Date().toISOString();
+    const src = _allRows(SHEETS.SCHEMAS).find(s => String(s.id) === String(p.id));
+    if (!src) throw new Error('Schema not found');
+
+    const newSchemaId = _nextId(SHEETS.SCHEMAS);
+    const newSchema = { 
+      id: newSchemaId, 
+      name: src.name + ' (копия)', 
+      description: src.description,
+      copied_from: src.id, 
+      pos_x: (src.pos_x || 0) + 20, 
+      pos_y: (src.pos_y || 0) + 20,
+      create_date_time: now, 
+      update_date_time: now 
+    };
+
+    const srcTables = getTablesBySchema({ schema_id: p.id });
     
-    cols.forEach(c => {
-      const newCId = colIdCounter++;
-      colIdMap[String(c.id)] = newCId;
-      
+    if (!srcTables.length) {
+      _appendRow(SHEETS.SCHEMAS, newSchema, SCHEMA_HEADERS);
+      return newSchema;
+    }
+
+    const tblSh = _sheet(SHEETS.TABLES);
+    const colSh = _sheet(SHEETS.COLUMNS);
+    let tblIdCounter = _nextId(SHEETS.TABLES);
+    let colIdCounter = _nextId(SHEETS.COLUMNS);
+
+    const tableIdMap = {};
+    const colIdMap   = {};
+
+    // 1. Подготовка строк таблиц
+    const tblRows = srcTables.map(t => {
+      const newId = tblIdCounter++;
+      tableIdMap[String(t.id)] = newId;
       const obj = {
-        ...c,
-        id: newCId,
-        table_id: newTableId,
-        fk_table_id: '', 
-        fk_column_id: '',
+        ...t,
+        id: newId,
+        schema_id: newSchemaId,
         create_date_time: now,
         update_date_time: now
       };
-      
-      const rowIdx = colRows.length;
-      colRows.push(COL_HEADERS.map(h => obj[h] !== undefined ? obj[h] : ''));
-      
-      // ИСПРАВЛЕНИЕ: Безопасная проверка boolean/строки без вызова isTrue()
-      const isFk = (c.is_fk === true || String(c.is_fk).toLowerCase() === 'true' || c.is_fk === 1);
-      
-      if (isFk && c.fk_table_id) {
-        fkNeeds.push({
-          rowIdx: rowIdx,
-          fkTableId: String(c.fk_table_id),
-          fkColId: String(c.fk_column_id || '')
-        });
+      return TABLE_HEADERS.map(h => obj[h] !== undefined ? obj[h] : '');
+    });
+
+    // 2. Подготовка строк колонок
+    // Читаем ВСЕ колонки один раз и группируем по table_id (избегаем N+1 запросов)
+    const allSrcCols = _allRows(SHEETS.COLUMNS);
+    const srcTableIds = new Set(srcTables.map(t => String(t.id)));
+    const colsByTable = {};
+    allSrcCols.forEach(c => {
+      const tid = String(c.table_id);
+      if (srcTableIds.has(tid)) {
+        if (!colsByTable[tid]) colsByTable[tid] = [];
+        colsByTable[tid].push(c);
       }
     });
-  });
 
-  // 3. Восстановление связей (FK)
-  const fkTableIdx = COL_HEADERS.indexOf('fk_table_id');
-  const fkColIdx = COL_HEADERS.indexOf('fk_column_id');
-  fkNeeds.forEach(({rowIdx, fkTableId, fkColId}) => {
-    const newTId = tableIdMap[fkTableId] || '';
-    const newCId = colIdMap[fkColId] || '';
-    if (fkTableIdx !== -1) colRows[rowIdx][fkTableIdx] = newTId;
-    if (fkColIdx !== -1) colRows[rowIdx][fkColIdx] = newCId;
-  });
+    const colRows = [];
+    const fkNeeds = [];
 
-  // 4. Пакетная вставка с динамическим расширением листов (защита от Out of Bounds)
-  if (tblRows.length) {
-    const numCols = tblRows[0].length;
-    if (tblSh.getMaxColumns() < numCols) {
-      tblSh.insertColumnsAfter(tblSh.getMaxColumns(), numCols - tblSh.getMaxColumns());
+    srcTables.forEach(t => {
+      const cols = (colsByTable[String(t.id)] || []).sort((a, b) => Number(a.position) - Number(b.position));
+      const newTableId = tableIdMap[String(t.id)];
+
+      cols.forEach(c => {
+        const newCId = colIdCounter++;
+        colIdMap[String(c.id)] = newCId;
+
+        const isFk = isTrue(c.is_fk) || c.is_fk === 1;
+        const isPk = isTrue(c.is_pk) || c.is_pk === 1;
+
+        const obj = {
+          ...c,
+          id: newCId,
+          table_id: newTableId,
+          // Нормализуем boolean: Sheets setValues ожидает нативный boolean, не строку
+          is_pk: isPk,
+          is_fk: isFk,
+          fk_table_id: '',
+          fk_column_id: '',
+          create_date_time: now,
+          update_date_time: now
+        };
+
+        const rowIdx = colRows.length;
+        colRows.push(COL_HEADERS.map(h => obj[h] !== undefined ? obj[h] : ''));
+
+        if (isFk && c.fk_table_id) {
+          fkNeeds.push({
+            rowIdx,
+            fkTableId: String(c.fk_table_id),
+            fkColId:   String(c.fk_column_id || '')
+          });
+        }
+      });
+    });
+
+    // 3. Восстановление связей (FK) с поддержкой внешних ссылок
+    const fkTableIdx = COL_HEADERS.indexOf('fk_table_id');
+    const fkColIdx = COL_HEADERS.indexOf('fk_column_id');
+    
+    fkNeeds.forEach(({rowIdx, fkTableId, fkColId}) => {
+      // Сохраняем оригинальный ID, если таблица находится за пределами копируемой схемы
+      const newTId = tableIdMap[fkTableId] || fkTableId; 
+      const newCId = colIdMap[fkColId] || fkColId;
+      if (fkTableIdx !== -1) colRows[rowIdx][fkTableIdx] = newTId;
+      if (fkColIdx !== -1) colRows[rowIdx][fkColIdx] = newCId;
+    });
+
+    // 4. Пакетная вставка (Транзакционное исполнение)
+    // Записываем схему только после того, как все данные подготовлены без ошибок
+    _appendRow(SHEETS.SCHEMAS, newSchema, SCHEMA_HEADERS);
+
+    if (tblRows.length) {
+      const numCols = tblRows[0].length;
+      if (tblSh.getMaxColumns() < numCols) tblSh.insertColumnsAfter(tblSh.getMaxColumns(), numCols - tblSh.getMaxColumns());
+      const startT = tblSh.getLastRow() + 1;
+      const neededRows = startT + tblRows.length - 1;
+      if (tblSh.getMaxRows() < neededRows) tblSh.insertRowsAfter(tblSh.getMaxRows(), neededRows - tblSh.getMaxRows());
+      tblSh.getRange(startT, 1, tblRows.length, numCols).setValues(tblRows);
     }
-    const startT = tblSh.getLastRow() + 1;
-    const neededRows = startT + tblRows.length - 1;
-    if (tblSh.getMaxRows() < neededRows) {
-      tblSh.insertRowsAfter(tblSh.getMaxRows(), neededRows - tblSh.getMaxRows());
+    
+    if (colRows.length) {
+      const numCols = colRows[0].length;
+      if (colSh.getMaxColumns() < numCols) colSh.insertColumnsAfter(colSh.getMaxColumns(), numCols - colSh.getMaxColumns());
+      const startC = colSh.getLastRow() + 1;
+      const neededRows = startC + colRows.length - 1;
+      if (colSh.getMaxRows() < neededRows) colSh.insertRowsAfter(colSh.getMaxRows(), neededRows - colSh.getMaxRows());
+      colSh.getRange(startC, 1, colRows.length, numCols).setValues(colRows);
     }
-    tblSh.getRange(startT, 1, tblRows.length, numCols).setValues(tblRows);
+    
+    return newSchema;
+
+  } finally {
+    // Гарантированное снятие блокировки
+    lock.releaseLock();
   }
-  
-  if (colRows.length) {
-    const numCols = colRows[0].length;
-    if (colSh.getMaxColumns() < numCols) {
-      colSh.insertColumnsAfter(colSh.getMaxColumns(), numCols - colSh.getMaxColumns());
-    }
-    const startC = colSh.getLastRow() + 1;
-    const neededRows = startC + colRows.length - 1;
-    if (colSh.getMaxRows() < neededRows) {
-      colSh.insertRowsAfter(colSh.getMaxRows(), neededRows - colSh.getMaxRows());
-    }
-    colSh.getRange(startC, 1, colRows.length, numCols).setValues(colRows);
-  }
-  
-  return newSchema;
 }
 
 function detachSchema(p) {

@@ -141,7 +141,7 @@ function _seedDefaultTemplates(ss) {
     const resolvedCatId = tpl.category_id ? catId(tpl.category_id) : '';
     tplSheet.appendRow([tplId, tpl.name, resolvedCatId, tpl.description, now, now]);
     tpl.cols.forEach((col, pos) => {
-      tcolSheet.appendRow([tcolId, tplId, col.name, col.desc, typeId(col.type), col.is_pk, col.is_fk, pos+1, now, now]);
+      tcolSheet.appendRow([tcolId, tplId, col.name, col.desc, '', typeId(col.type), col.is_pk, col.is_fk, pos+1, now, now]);
       tcolId++;
     });
     tplId++;

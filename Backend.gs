@@ -32,10 +32,10 @@ function initSheets() {
     [SHEETS.ASSIGNMENTS]:   ['id','name','description','create_date_time','update_date_time'],
     [SHEETS.COL_TYPES]:     ['id','name','designation','description','create_date_time','update_date_time'],
     [SHEETS.SCHEMAS]:       ['id','name','description','copied_from','pos_x','pos_y','create_date_time','update_date_time'],
-    [SHEETS.TABLES]:        ['id','schema_id','name','description','category_id','assignment_id','pos_x','pos_y','create_date_time','update_date_time'],
-    [SHEETS.COLUMNS]:       ['id','table_id','name','description','type_id','is_pk','is_fk','fk_table_id','fk_column_id','position','create_date_time','update_date_time'],
+    [SHEETS.TABLES]:        ['id','schema_id','name','description','note','category_id','assignment_id','pos_x','pos_y','create_date_time','update_date_time'],
+    [SHEETS.COLUMNS]:       ['id','table_id','name','description','note','type_id','is_pk','is_fk','fk_table_id','fk_column_id','position','create_date_time','update_date_time'],
     [SHEETS.TEMPLATES]:     ['id','name','category_id','description','create_date_time','update_date_time'],
-    [SHEETS.TEMPLATE_COLS]: ['id','template_id','name','description','type_id','is_pk','is_fk','position','create_date_time','update_date_time'],
+    [SHEETS.TEMPLATE_COLS]: ['id','template_id','name','description','note','type_id','is_pk','is_fk','position','create_date_time','update_date_time'],
   };
 
   Object.entries(defs).forEach(([sheetName, headers]) => {
