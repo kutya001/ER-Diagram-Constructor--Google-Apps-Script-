@@ -61,7 +61,7 @@ function copySchema(p) {
   const tableIdMap = {};
   const colIdMap   = {};
 
-  // 1. Prepare table rows safely using TABLE_HEADERS
+  // 1. Подготовка строк таблиц
   const tblRows = srcTables.map(t => {
     const newId = tblIdCounter++;
     tableIdMap[String(t.id)] = newId;
@@ -75,9 +75,9 @@ function copySchema(p) {
     return TABLE_HEADERS.map(h => obj[h] !== undefined ? obj[h] : '');
   });
 
-  // 2. Prepare column rows safely using COL_HEADERS
+  // 2. Подготовка строк колонок
   const colRows = [];
-  const fkNeeds = []; // { rowIdx, fkTableId, fkColId }
+  const fkNeeds = [];
   
   srcTables.forEach(t => {
     const cols = getColumnsByTable({ table_id: t.id });
@@ -91,7 +91,7 @@ function copySchema(p) {
         ...c,
         id: newCId,
         table_id: newTableId,
-        fk_table_id: '', // Reset initially, will resolve in next pass
+        fk_table_id: '', 
         fk_column_id: '',
         create_date_time: now,
         update_date_time: now
@@ -100,7 +100,10 @@ function copySchema(p) {
       const rowIdx = colRows.length;
       colRows.push(COL_HEADERS.map(h => obj[h] !== undefined ? obj[h] : ''));
       
-      if (isTrue(c.is_fk) && c.fk_table_id) {
+      // ИСПРАВЛЕНИЕ: Безопасная проверка boolean/строки без вызова isTrue()
+      const isFk = (c.is_fk === true || String(c.is_fk).toLowerCase() === 'true' || c.is_fk === 1);
+      
+      if (isFk && c.fk_table_id) {
         fkNeeds.push({
           rowIdx: rowIdx,
           fkTableId: String(c.fk_table_id),
@@ -110,10 +113,9 @@ function copySchema(p) {
     });
   });
 
-  // 3. Resolve Foreign Keys
+  // 3. Восстановление связей (FK)
   const fkTableIdx = COL_HEADERS.indexOf('fk_table_id');
   const fkColIdx = COL_HEADERS.indexOf('fk_column_id');
-  
   fkNeeds.forEach(({rowIdx, fkTableId, fkColId}) => {
     const newTId = tableIdMap[fkTableId] || '';
     const newCId = colIdMap[fkColId] || '';
@@ -121,14 +123,31 @@ function copySchema(p) {
     if (fkColIdx !== -1) colRows[rowIdx][fkColIdx] = newCId;
   });
 
-  // 4. Batch insert
+  // 4. Пакетная вставка с динамическим расширением листов (защита от Out of Bounds)
   if (tblRows.length) {
+    const numCols = tblRows[0].length;
+    if (tblSh.getMaxColumns() < numCols) {
+      tblSh.insertColumnsAfter(tblSh.getMaxColumns(), numCols - tblSh.getMaxColumns());
+    }
     const startT = tblSh.getLastRow() + 1;
-    tblSh.getRange(startT, 1, tblRows.length, tblRows[0].length).setValues(tblRows);
+    const neededRows = startT + tblRows.length - 1;
+    if (tblSh.getMaxRows() < neededRows) {
+      tblSh.insertRowsAfter(tblSh.getMaxRows(), neededRows - tblSh.getMaxRows());
+    }
+    tblSh.getRange(startT, 1, tblRows.length, numCols).setValues(tblRows);
   }
+  
   if (colRows.length) {
+    const numCols = colRows[0].length;
+    if (colSh.getMaxColumns() < numCols) {
+      colSh.insertColumnsAfter(colSh.getMaxColumns(), numCols - colSh.getMaxColumns());
+    }
     const startC = colSh.getLastRow() + 1;
-    colSh.getRange(startC, 1, colRows.length, colRows[0].length).setValues(colRows);
+    const neededRows = startC + colRows.length - 1;
+    if (colSh.getMaxRows() < neededRows) {
+      colSh.insertRowsAfter(colSh.getMaxRows(), neededRows - colSh.getMaxRows());
+    }
+    colSh.getRange(startC, 1, colRows.length, numCols).setValues(colRows);
   }
   
   return newSchema;
