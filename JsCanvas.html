@@ -22,6 +22,7 @@ function s2w(sx,sy){return{x:(sx-ox)/sc,y:(sy-oy)/sc};}
 // Relation state
 let hovRel=null; // {col} hovered relation
 let selRel=null; // {col} selected relation (clicked)
+let _relAnimRaf=null; // RAF handle for flowing-current animation
 
 function setupCanvas(){
   cv.addEventListener('mousedown',onDown,{passive:false});
@@ -216,6 +217,21 @@ function render(){
   calcSI();
   drawRels(); schTables().forEach(t=>drawTable(t));
   if(relDraw&&relSrc&&relPos)drawRelDraft();
+  // Запуск анимации при наличии связей
+  if(S.columns && S.columns.some(c=>isFK(c)&&c.fk_table_id)) _ensureRelAnim();
+}
+
+// ─── Continuous animation loop for flowing-current dash effect ───
+// Self-starts when FK relations exist; auto-stops when none remain.
+function _ensureRelAnim(){
+  if(_relAnimRaf!==null)return; // already running
+  function _tick(){
+    const hasRels=S.schema&&S.columns&&S.columns.some(c=>isFK(c)&&c.fk_table_id);
+    if(!hasRels){_relAnimRaf=null;return;} // auto-stop
+    render();
+    _relAnimRaf=requestAnimationFrame(_tick);
+  }
+  _relAnimRaf=requestAnimationFrame(_tick);
 }
 
 function drawGrid(){
@@ -227,20 +243,53 @@ function drawGrid(){
 }
 function drawEmpty(){ctx.fillStyle='rgba(128,128,128,.18)';ctx.font='15px Segoe UI';ctx.textAlign='center';ctx.fillText('Выберите или создайте схему БД',cv.width/2,cv.height/2);ctx.textAlign='left';}
 
+// ─── Orthogonal path builder ──────────────────────────────
+// Returns array of screen-space points [p0,p1,...] for a stepped path
+// between two relation ports. Handles 3-segment (normal) and
+// 5-segment (wrap-around) cases.
+function orthoPath(sx,sy,tx,ty,st,tt){
+  // Already in world coords; convert to screen once here:
+  const S1=w2s(sx,sy), T1=w2s(tx,ty);
+  const smx=S1.x, smy=S1.y, tmx=T1.x, tmy=T1.y;
+
+  // 3-segment: source exits right, target enters left (or vice-versa)
+  // midX = halfway between source port and target port
+  const midX=(smx+tmx)/2;
+
+  // 5-segment: target is behind source (wrap needed)
+  // Detect: source exits right but target is to the left of source left edge,
+  // or source exits left but target is to the right of source right edge.
+  const stL=w2s(st.pos_x||100, (st.pos_y||100)).x;
+  const stR=stL+TW*sc;
+  const ttL=w2s(tt.pos_x||100, (tt.pos_y||100)).x;
+  const ttR=ttL+TW*sc;
+  const stBot=w2s(st.pos_x||100,(st.pos_y||100)+TH+gc(st.id).length*CH+8).y;
+  const OFF=22*sc;
+
+  // Determine exit direction
+  const exitR = smx >= (stL+stR)/2;
+  const wrapNeeded = exitR ? (tmx < smx-OFF) : (tmx > smx+OFF);
+
+  if(wrapNeeded){
+    // 5 segments: exit → go past table bottom → cross → arrive
+    const sideX = exitR ? stR+OFF : stL-OFF;
+    const bypassY = stBot+OFF;
+    const arrivalX = exitR ? ttL-OFF : ttR+OFF;
+    return [smx,smy, sideX,smy, sideX,bypassY, arrivalX,bypassY, arrivalX,tmy, tmx,tmy];
+  }
+  // 3 segments: straight elbow
+  return [smx,smy, midX,smy, midX,tmy, tmx,tmy];
+}
+
 function drawRelDraft(){
   const st=S.tables.find(t=>String(t.id)===String(relSrc.tableId));if(!st)return;
   const cols=gc(st.id),i=cols.findIndex(c=>String(c.id)===String(relSrc.columnId));
-  
-  // Decide start side based on mouse position relative to table
+
   const sxL=(st.pos_x||100), sxR=sxL+TW;
   const sy=(st.pos_y||100)+TH+i*CH+CH/2;
   const wp=s2w(relPos.x, relPos.y);
-  
-  let sx=sxR;
-  if(wp.x < sxL) sx=sxL;
-  else if(wp.x > sxR) sx=sxR;
-  else sx = (Math.abs(wp.x-sxL) < Math.abs(wp.x-sxR)) ? sxL : sxR;
 
+  let sx = (Math.abs(wp.x-sxL) < Math.abs(wp.x-sxR)) ? sxL : sxR;
   const sp=w2s(sx,sy);
   ctx.save();ctx.strokeStyle=C.lh;ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
   ctx.beginPath();ctx.moveTo(sp.x,sp.y);ctx.lineTo(relPos.x,relPos.y);ctx.stroke();
@@ -256,69 +305,99 @@ function drawRels(){
     const sc2=gc(st.id),tc=gc(tt.id);
     const si=sc2.findIndex(c=>String(c.id)===String(col.id));
     const ti=tc.findIndex(c=>String(c.id)===String(col.fk_column_id));
-    
-    // Dynamic anchor point selection
+
     const sxL=(st.pos_x||100), sxR=sxL+TW;
     const txL=(tt.pos_x||100), txR=txL+TW;
     const sy=(st.pos_y||100)+TH+si*CH+CH/2;
     const ty=(tt.pos_y||100)+TH+Math.max(0,ti)*CH+CH/2;
-    
-    let sx, tx, dirS=1, dirT=-1;
-    if(sxR < txL){ sx=sxR; tx=txL; dirS=1; dirT=-1; }
-    else if(sxL > txR){ sx=sxL; tx=txR; dirS=-1; dirT=1; }
-    else {
-      // Overlap: connect nearest edges
-      if(Math.abs(sxR-txL) < Math.abs(sxL-txR)){ sx=sxR; tx=txL; dirS=1; dirT=-1; }
-      else { sx=sxL; tx=txR; dirS=-1; dirT=1; }
-    }
-    
-    const sp=w2s(sx,sy),tp2=w2s(tx,ty);
-    const dx=Math.max(30, Math.abs(tp2.x-sp.x)*.5);
+
+    // Choose ports: prefer non-overlapping sides
+    let sx, tx2, dirS, dirT;
+    if(sxR < txL)      { sx=sxR; tx2=txL; dirS=1;  dirT=-1; }
+    else if(sxL > txR) { sx=sxL; tx2=txR; dirS=-1; dirT=1;  }
+    else if(Math.abs(sxR-txL) < Math.abs(sxL-txR))
+                       { sx=sxR; tx2=txL; dirS=1;  dirT=-1; }
+    else               { sx=sxL; tx2=txR; dirS=-1; dirT=1;  }
 
     const isHov=hovRel&&String(hovRel.id)===String(col.id);
     const isSel=selRel&&String(selRel.id)===String(col.id);
-    const isRelToSel = SI.active && (String(col.table_id) === String(SI.tid) || String(col.fk_table_id) === String(SI.tid));
-
+    const isRelToSel=SI.active&&(String(col.table_id)===String(SI.tid)||String(col.fk_table_id)===String(SI.tid));
     const lineW=(isSel||isRelToSel)?3:isHov?2.5:1.5;
     const lineCol=(isSel||isRelToSel||isHov)?C.lh:C.li;
-    const opacity=(SI.active && !isRelToSel && !isSel && !isHov) ? 0.2 : 1.0;
+    const opacity=(SI.active&&!isRelToSel&&!isSel&&!isHov)?0.2:1.0;
+
+    // Build orthogonal path (world coords → screen coords array)
+    const pts=orthoPath(sx,sy,tx2,ty,st,tt);
 
     ctx.save();
-    ctx.globalAlpha = opacity;
-    if(isSel || isRelToSel){ctx.shadowColor=C.lh;ctx.shadowBlur=8*sc;}
-    ctx.strokeStyle=lineCol;ctx.lineWidth=lineW;
-    ctx.beginPath();ctx.moveTo(sp.x,sp.y);
-    ctx.bezierCurveTo(sp.x+dx*dirS,sp.y,tp2.x+dx*dirT,tp2.y,tp2.x,tp2.y);
+    ctx.globalAlpha=opacity;
+    if(isSel||isRelToSel){ctx.shadowColor=C.lh;ctx.shadowBlur=8*sc;}
+    ctx.strokeStyle=lineCol; ctx.lineWidth=lineW;
+    ctx.lineJoin='round';  // smooth corners
+    ctx.beginPath();
+    ctx.moveTo(pts[0],pts[1]);
+    for(let i=2;i<pts.length;i+=2) ctx.lineTo(pts[i],pts[i+1]);
     ctx.stroke();
-    
+
+    // ── Flowing-current overlay: animated dashes, direction FK → PK ──
+    // Speed & opacity scale with interaction state
+    const _t = performance.now() / 1000;
+    const _spd  = (isSel||isRelToSel) ? 75 : isHov ? 52 : 24; // px/sec
+    const _dash = 7, _gap = 11, _period = _dash + _gap;
+    // Negative offset = dashes advance in path draw direction (FK → PK)
+    ctx.lineDashOffset = -((_t * _spd) % _period);
+    ctx.setLineDash([_dash, _gap]);
+    ctx.strokeStyle = (isSel||isRelToSel||isHov) ? C.lh : lineCol;
+    ctx.globalAlpha = opacity * ((isSel||isRelToSel) ? 0.80 : isHov ? 0.60 : 0.26);
+    ctx.lineWidth   = lineW * 0.9;
+    ctx.beginPath();
+    ctx.moveTo(pts[0],pts[1]);
+    for(let i=2;i<pts.length;i+=2) ctx.lineTo(pts[i],pts[i+1]);
+    ctx.stroke();
+    // Reset dash state before drawing markers
+    ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
+    ctx.globalAlpha = opacity; // restore for arrow/fork
+
     ctx.shadowBlur=0;
-    // Arrow at target
-    const a=Math.atan2(tp2.y-sp.y,tp2.x-sp.x); // approx angle for arrow
-    // Better: tangent angle at bezier end
-    const ta = Math.atan2(tp2.y - ty, tp2.x - (tx + dx*dirT/sc)); // wait, simplified below
-    
-    ctx.fillStyle=lineCol;ctx.beginPath();ctx.moveTo(tp2.x,tp2.y);
-    const arrA = dirT < 0 ? 0 : Math.PI; 
-    ctx.lineTo(tp2.x-7*Math.cos(arrA-.4),tp2.y-7*Math.sin(arrA-.4));
-    ctx.lineTo(tp2.x-7*Math.cos(arrA+.4),tp2.y-7*Math.sin(arrA+.4));
-    ctx.closePath();ctx.fill();
-    
-    // Circle/Fork at source
-    ctx.strokeStyle=C.fk;ctx.lineWidth=lineW;ctx.beginPath();
-    const srcA = dirS > 0 ? 0 : Math.PI;
-    ctx.moveTo(sp.x+9*Math.cos(srcA+.35),sp.y+9*Math.sin(srcA+.35));
-    ctx.lineTo(sp.x,sp.y);
-    ctx.lineTo(sp.x+9*Math.cos(srcA-.35),sp.y+9*Math.sin(srcA-.35));
+
+    // Arrow at target (last segment direction)
+    const n=pts.length;
+    const arrA=dirT<0?0:Math.PI;
+    ctx.fillStyle=lineCol;
+    ctx.beginPath();
+    ctx.moveTo(pts[n-2],pts[n-1]);
+    ctx.lineTo(pts[n-2]-7*Math.cos(arrA-.4),pts[n-1]-7*Math.sin(arrA-.4));
+    ctx.lineTo(pts[n-2]-7*Math.cos(arrA+.4),pts[n-1]-7*Math.sin(arrA+.4));
+    ctx.closePath(); ctx.fill();
+
+    // Fork/crow-foot at source (first segment direction)
+    const sp0=pts[0], sp1=pts[1];
+    const srcA=dirS>0?0:Math.PI;
+    ctx.strokeStyle=C.fk; ctx.lineWidth=lineW;
+    ctx.beginPath();
+    ctx.moveTo(sp0+9*Math.cos(srcA+.35),sp1+9*Math.sin(srcA+.35));
+    ctx.lineTo(sp0,sp1);
+    ctx.lineTo(sp0+9*Math.cos(srcA-.35),sp1+9*Math.sin(srcA-.35));
     ctx.stroke();
     ctx.restore();
   });
 }
 
-// Hit test: is world point wp near a relation bezier curve?
+// Hit test: is world point wp near an orthogonal relation path?
 function hitRel(wp){
   const ts=schTables(),ids=new Set(ts.map(t=>String(t.id)));
-  const THRESH=8/sc; // hit distance in world coords
+  const THRESH=7/sc; // hit distance in world coords
   const fkCols=S.columns.filter(c=>isFK(c)&&c.fk_table_id&&ids.has(String(c.table_id)));
+
+  // Point-to-segment distance helper
+  function ptSegDist(px,py,ax,ay,bx,by){
+    const dx=bx-ax,dy=by-ay,len2=dx*dx+dy*dy;
+    if(len2===0)return Math.hypot(px-ax,py-ay);
+    const t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/len2));
+    return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));
+  }
+
   for(const col of fkCols){
     const st=ts.find(t=>String(t.id)===String(col.table_id));
     const tt=ts.find(t=>String(t.id)===String(col.fk_table_id));
@@ -326,26 +405,26 @@ function hitRel(wp){
     const sc2=gc(st.id),tc=gc(tt.id);
     const si=sc2.findIndex(c=>String(c.id)===String(col.id));
     const ti=tc.findIndex(c=>String(c.id)===String(col.fk_column_id));
-    
-    const sxL=(st.pos_x||100), sxR=sxL+TW;
-    const txL=(tt.pos_x||100), txR=txL+TW;
+
+    const sxL=(st.pos_x||100),sxR=sxL+TW;
+    const txL=(tt.pos_x||100),txR=txL+TW;
     const sy=(st.pos_y||100)+TH+si*CH+CH/2;
     const ty=(tt.pos_y||100)+TH+Math.max(0,ti)*CH+CH/2;
-    
-    let sx, tx, dirS=1, dirT=-1;
-    if(sxR < txL){ sx=sxR; tx=txL; dirS=1; dirT=-1; }
-    else if(sxL > txR){ sx=sxL; tx=txR; dirS=-1; dirT=1; }
-    else {
-      if(Math.abs(sxR-txL) < Math.abs(sxL-txR)){ sx=sxR; tx=txL; dirS=1; dirT=-1; }
-      else { sx=sxL; tx=txR; dirS=-1; dirT=1; }
-    }
-    const dx=Math.max(30, Math.abs(tx-sx)*.5);
-    
-    // Sample bezier at N points
-    for(let t2=0;t2<=1;t2+=0.05){
-      const bx=Math.pow(1-t2,3)*sx+3*Math.pow(1-t2,2)*t2*(sx+dx*dirS)+3*(1-t2)*t2*t2*(tx+dx*dirT)+Math.pow(t2,3)*tx;
-      const by=Math.pow(1-t2,3)*sy+3*Math.pow(1-t2,2)*t2*sy+3*(1-t2)*t2*t2*ty+Math.pow(t2,3)*ty;
-      if(Math.hypot(wp.x-bx,wp.y-by)<THRESH){
+
+    let sx,tx2,dirS,dirT;
+    if(sxR<txL)          {sx=sxR;tx2=txL;dirS=1; dirT=-1;}
+    else if(sxL>txR)     {sx=sxL;tx2=txR;dirS=-1;dirT=1; }
+    else if(Math.abs(sxR-txL)<Math.abs(sxL-txR))
+                         {sx=sxR;tx2=txL;dirS=1; dirT=-1;}
+    else                 {sx=sxL;tx2=txR;dirS=-1;dirT=1; }
+
+    // pts is in screen coords — convert world path to screen for hit test
+    const pts=orthoPath(sx,sy,tx2,ty,st,tt);
+    // pts are screen coords; convert wp to screen for comparison
+    const wps=w2s(wp.x,wp.y);
+    const THRESHSCR=THRESH*sc;
+    for(let i=0;i<pts.length-2;i+=2){
+      if(ptSegDist(wps.x,wps.y,pts[i],pts[i+1],pts[i+2],pts[i+3])<THRESHSCR){
         return{...col, srcTable:st, tgtTable:tt};
       }
     }
