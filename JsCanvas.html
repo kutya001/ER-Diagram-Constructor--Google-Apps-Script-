@@ -23,6 +23,8 @@ function s2w(sx,sy){return{x:(sx-ox)/sc,y:(sy-oy)/sc};}
 let hovRel=null; // {col} hovered relation
 let selRel=null; // {col} selected relation (clicked)
 let _relAnimRaf=null; // RAF handle for flowing-current animation
+let _relAnimActive=false; // whether dot animation loop is running
+let _animTime=0; // cached animation time (updated only when animating)
 
 function setupCanvas(){
   cv.addEventListener('mousedown',onDown,{passive:false});
@@ -215,27 +217,51 @@ function render(){
   drawGrid();
   if(!S.schema){drawEmpty();return;}
   calcSI();
-  drawRels(); schTables().forEach(t=>drawTable(t));
+  _animTime=performance.now()/1000;
+  const _tables=schTables();
+  drawRels(_tables);
+  // Viewport culling: only draw tables visible on screen
+  _tables.forEach(t=>{
+    if(_isTableVisible(t)) drawTable(t);
+  });
   if(relDraw&&relSrc&&relPos)drawRelDraft();
-  // Запуск анимации при наличии связей
-  if(S.columns && S.columns.some(c=>isFK(c)&&c.fk_table_id)) _ensureRelAnim();
+  // Start animation loop only when there are active/hovered relations
+  const needsAnim=hovRel||selRel||SI.active;
+  if(needsAnim) _startRelAnim(); else _stopRelAnim();
 }
 
-// ─── Continuous animation loop for flowing-current dash effect ───
-// Self-starts when FK relations exist; auto-stops when none remain.
-function _ensureRelAnim(){
-  if(_relAnimRaf!==null)return; // already running
+// ─── Viewport culling helper ───
+function _isTableVisible(t){
+  const x=t.pos_x||100,y=t.pos_y||100;
+  const h=TH+gc(t.id).length*CH+8;
+  const sp=w2s(x,y);
+  const sw=TW*sc,sh=h*sc;
+  // Check if table rectangle overlaps canvas viewport
+  return sp.x+sw>0 && sp.x<cv.width && sp.y+sh>0 && sp.y<cv.height;
+}
+
+// ─── Controlled animation loop (only when needed) ───
+function _startRelAnim(){
+  if(_relAnimActive)return;
+  _relAnimActive=true;
   function _tick(){
-    const hasRels=S.schema&&S.columns&&S.columns.some(c=>isFK(c)&&c.fk_table_id);
-    if(!hasRels){_relAnimRaf=null;return;} // auto-stop
-    render();
+    if(!_relAnimActive){_relAnimRaf=null;return;}
+    R();
     _relAnimRaf=requestAnimationFrame(_tick);
   }
   _relAnimRaf=requestAnimationFrame(_tick);
 }
+function _stopRelAnim(){
+  if(!_relAnimActive)return;
+  _relAnimActive=false;
+  if(_relAnimRaf!==null){cancelAnimationFrame(_relAnimRaf);_relAnimRaf=null;}
+}
 
 function drawGrid(){
-  const g=40*sc,rx=((ox%g)+g)%g,ry=((oy%g)+g)%g;
+  if(sc<0.25)return; // skip grid at very small zoom
+  const g=40*sc;
+  if(g<6)return; // grid too dense, skip
+  const rx=((ox%g)+g)%g,ry=((oy%g)+g)%g;
   ctx.strokeStyle=C.gr; ctx.lineWidth=1; ctx.beginPath();
   for(let x=rx;x<cv.width;x+=g){ctx.moveTo(x,0);ctx.lineTo(x,cv.height);}
   for(let y=ry;y<cv.height;y+=g){ctx.moveTo(0,y);ctx.lineTo(cv.width,y);}
@@ -296,11 +322,48 @@ function drawRelDraft(){
   ctx.setLineDash([]);ctx.restore();
 }
 
-function drawRels(){
-  const ts=schTables(),ids=new Set(ts.map(t=>String(t.id)));
-  S.columns.filter(c=>isFK(c)&&c.fk_table_id&&ids.has(String(c.table_id))).forEach(col=>{
-    const st=ts.find(t=>String(t.id)===String(col.table_id));
-    const tt=ts.find(t=>String(t.id)===String(col.fk_table_id));
+// ─── Draw dots along an orthogonal path (electric current effect) ───
+function _drawDotsAlongPath(pts, dotR, spacing, speed, color, alpha){
+  // Calculate total path length
+  let totalLen=0;
+  const segLens=[];
+  for(let i=0;i<pts.length-2;i+=2){
+    const dx=pts[i+2]-pts[i],dy=pts[i+3]-pts[i+1];
+    const len=Math.sqrt(dx*dx+dy*dy);
+    segLens.push(len);
+    totalLen+=len;
+  }
+  if(totalLen<1)return;
+  // Animated offset
+  const offset=(_animTime*speed)%spacing;
+  ctx.fillStyle=color;
+  ctx.globalAlpha=alpha;
+  for(let dist=offset;dist<totalLen;dist+=spacing){
+    // Find point at 'dist' along path
+    let rem=dist,segIdx=0;
+    while(segIdx<segLens.length && rem>segLens[segIdx]){
+      rem-=segLens[segIdx]; segIdx++;
+    }
+    if(segIdx>=segLens.length)break;
+    const t=segLens[segIdx]>0?rem/segLens[segIdx]:0;
+    const px=pts[segIdx*2]+(pts[segIdx*2+2]-pts[segIdx*2])*t;
+    const py=pts[segIdx*2+1]+(pts[segIdx*2+3]-pts[segIdx*2+1])*t;
+    ctx.beginPath();
+    ctx.arc(px,py,dotR,0,Math.PI*2);
+    ctx.fill();
+  }
+}
+
+function drawRels(_tables){
+  const ts=_tables||schTables();
+  const ids=new Set(ts.map(t=>String(t.id)));
+  // Pre-build table lookup map for O(1) access
+  const tblMap=new Map(); ts.forEach(t=>tblMap.set(String(t.id),t));
+  const fkCols=S.columns.filter(c=>isFK(c)&&c.fk_table_id&&ids.has(String(c.table_id)));
+
+  fkCols.forEach(col=>{
+    const st=tblMap.get(String(col.table_id));
+    const tt=tblMap.get(String(col.fk_table_id));
     if(!st||!tt)return;
     const sc2=gc(st.id),tc=gc(tt.id);
     const si=sc2.findIndex(c=>String(c.id)===String(col.id));
@@ -322,8 +385,9 @@ function drawRels(){
     const isHov=hovRel&&String(hovRel.id)===String(col.id);
     const isSel=selRel&&String(selRel.id)===String(col.id);
     const isRelToSel=SI.active&&(String(col.table_id)===String(SI.tid)||String(col.fk_table_id)===String(SI.tid));
+    const isActive=isSel||isRelToSel||isHov;
     const lineW=(isSel||isRelToSel)?3:isHov?2.5:1.5;
-    const lineCol=(isSel||isRelToSel||isHov)?C.lh:C.li;
+    const lineCol=isActive?C.lh:C.li;
     const opacity=(SI.active&&!isRelToSel&&!isSel&&!isHov)?0.2:1.0;
 
     // Build orthogonal path (world coords → screen coords array)
@@ -333,33 +397,23 @@ function drawRels(){
     ctx.globalAlpha=opacity;
     if(isSel||isRelToSel){ctx.shadowColor=C.lh;ctx.shadowBlur=8*sc;}
     ctx.strokeStyle=lineCol; ctx.lineWidth=lineW;
-    ctx.lineJoin='round';  // smooth corners
+    ctx.lineJoin='round';
     ctx.beginPath();
     ctx.moveTo(pts[0],pts[1]);
     for(let i=2;i<pts.length;i+=2) ctx.lineTo(pts[i],pts[i+1]);
     ctx.stroke();
-
-    // ── Flowing-current overlay: animated dashes, direction FK → PK ──
-    // Speed & opacity scale with interaction state
-    const _t = performance.now() / 1000;
-    const _spd  = (isSel||isRelToSel) ? 75 : isHov ? 52 : 24; // px/sec
-    const _dash = 7, _gap = 11, _period = _dash + _gap;
-    // Negative offset = dashes advance in path draw direction (FK → PK)
-    ctx.lineDashOffset = -((_t * _spd) % _period);
-    ctx.setLineDash([_dash, _gap]);
-    ctx.strokeStyle = (isSel||isRelToSel||isHov) ? C.lh : lineCol;
-    ctx.globalAlpha = opacity * ((isSel||isRelToSel) ? 0.80 : isHov ? 0.60 : 0.26);
-    ctx.lineWidth   = lineW * 0.9;
-    ctx.beginPath();
-    ctx.moveTo(pts[0],pts[1]);
-    for(let i=2;i<pts.length;i+=2) ctx.lineTo(pts[i],pts[i+1]);
-    ctx.stroke();
-    // Reset dash state before drawing markers
-    ctx.setLineDash([]);
-    ctx.lineDashOffset = 0;
-    ctx.globalAlpha = opacity; // restore for arrow/fork
-
     ctx.shadowBlur=0;
+
+    // ── Dot animation (electric current effect) ──
+    // Dots: large spacing, moving FK → PK direction
+    const dotSpacing= isActive ? 40 : 55; // px between dots
+    const dotRadius = isActive ? 3.5*sc : 2.5*sc;
+    const dotSpeed  = isActive ? 50 : 25; // px/sec
+    const dotAlpha  = opacity * (isActive ? 0.9 : 0.4);
+    const dotColor  = isActive ? C.lh : lineCol;
+    _drawDotsAlongPath(pts, dotRadius, dotSpacing, dotSpeed, dotColor, dotAlpha);
+
+    ctx.globalAlpha=opacity;
 
     // Arrow at target (last segment direction)
     const n=pts.length;

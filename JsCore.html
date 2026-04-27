@@ -43,11 +43,11 @@ function queueSync(action, payload, preState=null){
     SQ.push({logId, action, payload, preState, resolve, reject});
     clearTimeout(syncTO);
     setSyncState('pending');
-    syncTO=setTimeout(flushSync, 1000);
+    syncTO=setTimeout(flushSync, 3000); // 3s debounce — wait for changes to settle
   });
 }
 
-// High-level debounced trigger: collects changes and sends after 1s of inactivity
+// High-level debounced trigger: collects changes and sends after 3s of inactivity
 let _triggerTimer=null;
 const _pendingPayloads=[];
 function triggerSync(action, payload){
@@ -55,7 +55,7 @@ function triggerSync(action, payload){
   clearTimeout(_triggerTimer);
   _triggerTimer=setTimeout(()=>{
     _pendingPayloads.splice(0).forEach(p=>queueSync(p.action,p.payload));
-  },1000);
+  },3000); // 3s debounce — wait for all frontend changes to stop
   setSyncState('pending');
 }
 
@@ -78,6 +78,7 @@ async function flushSync(){
   if(syncRunning||!SQ.length){return;}
   syncRunning=true;
   setSyncState('syncing');
+  // Take current batch, leave queue empty for new items during sync
   const batch=[...SQ]; SQ.length=0;
   try{
     const reqs=batch.map(b=>({action:b.action,payload:b.payload}));
@@ -114,7 +115,7 @@ async function flushSync(){
       logSync(b.action,false,e.message||String(e));
       SQ.push(b);
     });
-    if(syncErrCount<3){syncTO=setTimeout(flushSync,2000);}
+    if(syncErrCount<3){syncTO=setTimeout(flushSync,3000);}
     else{
       try{
         const failed=batch.map(b=>({action:b.action,payload:b.payload}));
@@ -125,16 +126,28 @@ async function flushSync(){
     }
     setSyncState('error');
   }finally{syncRunning=false;}
-  if(SQ.length)flushSync();
+  // If new items accumulated during sync, flush again after debounce
+  if(SQ.length){syncTO=setTimeout(flushSync,2000);}
 }
 
 async function syncNow(){
-  setSyncState('syncing');
+  // Force sync: immediately collect all pending payloads and flush
+  clearTimeout(_triggerTimer);
   clearTimeout(syncTO);
+  // Move any pending payloads into the sync queue immediately
+  if(_pendingPayloads.length){
+    _pendingPayloads.splice(0).forEach(p=>queueSync(p.action,p.payload));
+  }
+  setSyncState('syncing');
+  // Wait for any running sync to finish first (race protection)
+  if(syncRunning){
+    toast('Ожидание завершения текущей синхронизации…','inf');
+    await new Promise(r=>{const ch=setInterval(()=>{if(!syncRunning){clearInterval(ch);r();}},200);});
+  }
   await flushSync();
   if(syncErrCount===0&&!SQ.length){
     setSyncState('synced');
-    toast('Синхронизировано','ok');
+    toast('Принудительная синхронизация выполнена ✓','ok');
   } else {
     setSyncState('error');
     toast('Ошибка синхронизации','err');

@@ -322,7 +322,7 @@ function savePending(){
   saveT=setTimeout(()=>{
     const ids=Object.keys(pending);pending={};
     ids.forEach(id=>{const t=S.tables.find(t=>String(t.id)===String(id));if(t)api('updateTable',{id:t.id,pos_x:t.pos_x,pos_y:t.pos_y}).catch(()=>{});});
-  },550);
+  },3000); // 3s debounce — wait for drag/layout to finish
 }
 async function saveAll(){
   if(!S.schema){toast('Выберите схему','err');return;}
